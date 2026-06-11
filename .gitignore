@@ -1,0 +1,68 @@
+# ============================================================
+# FINDLEAKS .gitignore
+# ============================================================
+
+# --- Secrets (NEVER commit) ---
+.env
+.env.*
+!.env.example
+secrets.json
+*.pem
+*.key
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+
+# --- FAISS indexes (binary, can be 100MB+) ---
+*.index
+indexes/
+
+# --- Uploads ---
+uploads/
+
+# --- Node ---
+node_modules/
+frontend/dist/
+frontend/build/
+.npm/
+
+# --- Logs ---
+*.log
+logs/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Docker ---
+.dockerignore
+
+# --- Database files ---
+*.db
+*.sqlite
+*.sqlite3
