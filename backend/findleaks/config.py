@@ -27,6 +27,16 @@ class Settings(BaseSettings):
     # --- Telegram Bot (required for scanner) ---
     TELEGRAM_BOT_TOKEN: str = ""
 
+    # --- Reddit API (optional — uses public JSON if not set) ---
+    REDDIT_CLIENT_ID: str = ""
+    REDDIT_CLIENT_SECRET: str = ""
+
+    # --- Discord Bot (required for Discord scanner) ---
+    DISCORD_BOT_TOKEN: str = ""
+
+    # --- Pastebin (optional — uses public archive if not set) ---
+    PASTEBIN_API_KEY: str = ""
+
     # --- SMTP / Email (required for alerts) ---
     SMTP_HOST: str = "localhost"
     SMTP_PORT: int = 587

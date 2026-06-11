@@ -30,8 +30,9 @@ async def create_scanner(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    if body.platform not in ("twitter", "telegram"):
-        raise HTTPException(status_code=400, detail={"error": "unsupported_platform", "allowed": ["twitter", "telegram"]})
+    _ALLOWED = ("twitter", "telegram", "reddit", "discord", "pastebin")
+    if body.platform not in _ALLOWED:
+        raise HTTPException(status_code=400, detail={"error": "unsupported_platform", "allowed": list(_ALLOWED)})
     exam = (await db.execute(select(Exam).where(Exam.id == body.exam_id))).scalar_one_or_none()
     if not exam:
         raise HTTPException(status_code=404, detail={"error": "exam_not_found"})
@@ -101,6 +102,15 @@ async def start_scanner(
     elif row.platform == "telegram":
         from findleaks.scanners.telegram import TelegramScanner
         scanner = TelegramScanner(exam_id=row.exam_id, exam_slug=exam.slug, keywords=keywords)
+    elif row.platform == "reddit":
+        from findleaks.scanners.reddit import RedditScanner
+        scanner = RedditScanner(exam_id=row.exam_id, exam_slug=exam.slug, keywords=keywords)
+    elif row.platform == "discord":
+        from findleaks.scanners.discord_scanner import DiscordScanner
+        scanner = DiscordScanner(exam_id=row.exam_id, exam_slug=exam.slug, keywords=keywords)
+    elif row.platform == "pastebin":
+        from findleaks.scanners.pastebin import PastebinScanner
+        scanner = PastebinScanner(exam_id=row.exam_id, exam_slug=exam.slug, keywords=keywords)
     else:
         raise HTTPException(status_code=400, detail={"error": "unsupported_platform"})
 
