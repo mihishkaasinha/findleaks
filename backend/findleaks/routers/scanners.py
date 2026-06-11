@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,34 @@ router = APIRouter(prefix="/scanners", tags=["scanners"])
 
 def _scanner_key(exam_id: int, platform: str) -> str:
     return f"{exam_id}:{platform}"
+
+
+class ScannerCreate(BaseModel):
+    exam_id: int
+    platform: str  # "twitter" | "telegram"
+
+
+@router.post("", status_code=201)
+async def create_scanner(
+    body: ScannerCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    if body.platform not in ("twitter", "telegram"):
+        raise HTTPException(status_code=400, detail={"error": "unsupported_platform", "allowed": ["twitter", "telegram"]})
+    exam = (await db.execute(select(Exam).where(Exam.id == body.exam_id))).scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail={"error": "exam_not_found"})
+    existing = (await db.execute(
+        select(ScannerStatus).where(ScannerStatus.exam_id == body.exam_id, ScannerStatus.platform == body.platform)
+    )).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=409, detail={"error": "scanner_already_exists"})
+    row = ScannerStatus(exam_id=body.exam_id, platform=body.platform, enabled=False)
+    db.add(row)
+    await db.flush()
+    await db.refresh(row)
+    return {"id": row.id, "exam_id": row.exam_id, "platform": row.platform, "enabled": row.enabled}
 
 
 @router.get("", response_model=list[ScannerItem])

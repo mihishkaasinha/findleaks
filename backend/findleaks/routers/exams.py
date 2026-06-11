@@ -6,11 +6,13 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from findleaks.alerts import dispatch_alerts
+from findleaks.routers.auth import push_notification
 from findleaks.auth import get_current_user
 from findleaks.config import get_settings
 from findleaks.database import get_db
@@ -112,6 +114,80 @@ async def get_exam(
         "description": exam.description, "question_count": exam.question_count,
         "keywords": exam.keywords, "last_indexed_at": exam.last_indexed_at,
         "created_at": exam.created_at,
+    }
+
+
+# ---------------------------------------------------------------------------
+# PATCH /exams/{exam_id}
+# ---------------------------------------------------------------------------
+
+@router.patch("/{exam_id}")
+async def update_exam(
+    exam_id: int,
+    body: ExamUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    exam = (await db.execute(select(Exam).where(Exam.id == exam_id))).scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail={"error": "exam_not_found"})
+    if body.name is not None:
+        exam.name = body.name
+    if body.description is not None:
+        exam.description = body.description
+    if body.keywords is not None:
+        exam.keywords = body.keywords
+    if body.alert_recipients is not None or body.alert_webhooks is not None:
+        cfg = exam.alert_config or {"recipients": [], "webhooks": [], "sms": []}
+        if body.alert_recipients is not None:
+            cfg["recipients"] = [str(r) for r in body.alert_recipients]
+        if body.alert_webhooks is not None:
+            cfg["webhooks"] = body.alert_webhooks or []
+        exam.alert_config = cfg
+    return {"id": exam.id, "name": exam.name, "slug": exam.slug}
+
+
+# ---------------------------------------------------------------------------
+# DELETE /exams/{exam_id}
+# ---------------------------------------------------------------------------
+
+@router.delete("/{exam_id}", status_code=204)
+async def delete_exam(
+    exam_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> None:
+    exam = (await db.execute(select(Exam).where(Exam.id == exam_id))).scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail={"error": "exam_not_found"})
+    await db.delete(exam)
+
+
+# ---------------------------------------------------------------------------
+# GET /exams/{exam_id}/questions
+# ---------------------------------------------------------------------------
+
+@router.get("/{exam_id}/questions")
+async def list_questions(
+    exam_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    exam = (await db.execute(select(Exam).where(Exam.id == exam_id))).scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail={"error": "exam_not_found"})
+    from sqlalchemy import func as _func
+    total = (await db.execute(select(_func.count(Question.id)).where(Question.exam_id == exam_id))).scalar() or 0
+    rows = (await db.execute(
+        select(Question).where(Question.exam_id == exam_id)
+        .order_by(Question.id).offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    return {
+        "total": total, "page": page, "page_size": page_size,
+        "total_pages": max(1, -(-total // page_size)),
+        "items": [{"id": q.id, "question_text": q.question_text, "page_number": q.page_number} for q in rows],
     }
 
 
@@ -295,8 +371,32 @@ async def scan_image(
         await db.refresh(leak)
         leak_id = leak.id
 
-        if exam.alert_config:
+        if exam.alert_config and exam.alert_config.get("recipients"):
             recipients = exam.alert_config.get("recipients", [])
+            asyncio.create_task(dispatch_alerts(
+                leak_id=leak_id,
+                exam_name=exam.name,
+                platform="manual",
+                confidence=detection.confidence,
+                confidence_label=detection.confidence_label,
+                matched_count=len(detection.matched_questions),
+                ocr_text=detection.ocr_text,
+                timestamp=datetime.now(timezone.utc),
+                alert_config=exam.alert_config,
+            ))
+            leak.alert_sent = True
+
+    if leak_id:
+        push_notification({
+            "type": "new_leak",
+            "leak_id": leak_id,
+            "exam_id": exam_id,
+            "exam_name": exam.name,
+            "confidence": detection.confidence,
+            "confidence_label": detection.confidence_label,
+            "platform": "manual",
+            "ts": datetime.now(timezone.utc).isoformat(),
+        })
 
     return ScanResponse(
         status="success",

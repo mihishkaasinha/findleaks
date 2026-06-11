@@ -7,10 +7,12 @@ import Navbar from './components/Navbar'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Exams from './pages/Exams'
+import Questions from './pages/Questions'
 import ManualScan from './pages/ManualScan'
 import Alerts from './pages/Alerts'
 import Scanners from './pages/Scanners'
 import SystemHealth from './pages/SystemHealth'
+import Settings from './pages/Settings'
 import NotFound from './pages/NotFound'
 
 function AppLayout({ children }) {
@@ -60,6 +62,16 @@ export default function App() {
           <Route path="/health" element={
             <PrivateRoute>
               <AppLayout><SystemHealth /></AppLayout>
+            </PrivateRoute>
+          } />
+          <Route path="/exams/:examId/questions" element={
+            <PrivateRoute>
+              <AppLayout><Questions /></AppLayout>
+            </PrivateRoute>
+          } />
+          <Route path="/settings" element={
+            <PrivateRoute>
+              <AppLayout><Settings /></AppLayout>
             </PrivateRoute>
           } />
 

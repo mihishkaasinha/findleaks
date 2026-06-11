@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Clock, RefreshCw, Shield, TrendingUp } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCircle2, Clock, RefreshCw, Shield, TrendingUp } from 'lucide-react'
 import { api } from '../api'
+import LeakDetailModal from '../components/LeakDetailModal'
+import { useNotifications } from '../hooks/useNotifications'
 
 const CONFIDENCE_COLORS = {
   high: 'text-red-400 bg-red-950 border-red-800',
@@ -8,9 +10,9 @@ const CONFIDENCE_COLORS = {
   clean: 'text-green-400 bg-green-950 border-green-800',
 }
 
-function LeakCard({ leak, onAck, onFP }) {
+function LeakCard({ leak, onAck, onFP, onOpen }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3 hover:border-gray-700 transition-colors">
+    <div onClick={onOpen} className="bg-gray-900 border border-gray-800 rounded-xl p-4 space-y-3 hover:border-gray-700 transition-colors cursor-pointer">
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className="text-sm font-medium text-white">{leak.exam_name || `Exam #${leak.exam_id}`}</p>
@@ -70,7 +72,15 @@ export default function Dashboard() {
   const [filter, setFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [selectedLeak, setSelectedLeak] = useState(null)
+  const [toast, setToast] = useState(null)
   const PAGE_SIZE = 10
+
+  const notifConnected = useNotifications((event) => {
+    setToast(event)
+    setTimeout(() => setToast(null), 6000)
+    load()
+  })
 
   const load = useCallback(async () => {
     try {
@@ -96,11 +106,13 @@ export default function Dashboard() {
   const handleAck = async (id) => {
     await api.patchLeak(id, { status: 'acknowledged' })
     setLeaks(ls => ls.map(l => l.id === id ? { ...l, status: 'acknowledged' } : l))
+    setSelectedLeak(s => s?.id === id ? { ...s, status: 'acknowledged' } : s)
   }
 
   const handleFP = async (id) => {
     await api.patchLeak(id, { status: 'false_positive' })
     setLeaks(ls => ls.map(l => l.id === id ? { ...l, status: 'false_positive' } : l))
+    setSelectedLeak(s => s?.id === id ? { ...s, status: 'false_positive' } : s)
   }
 
   const filtered = filter === 'all' ? leaks : leaks.filter(l => l.status === filter)
@@ -109,8 +121,21 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto">
+      {toast && (
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-3 bg-red-950 border border-red-700 rounded-xl px-4 py-3 shadow-xl animate-in slide-in-from-right">
+          <Bell className="w-4 h-4 text-red-400 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-red-300">New Leak Detected</p>
+            <p className="text-xs text-gray-400">{toast.exam_name} · {(toast.confidence * 100).toFixed(0)}% {toast.confidence_label}</p>
+          </div>
+          <button onClick={() => setToast(null)} className="text-gray-600 hover:text-white ml-2">✕</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white">Dashboard</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold text-white">Dashboard</h1>
+          {notifConnected && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" title="Live notifications active" />}
+        </div>
         <button onClick={load} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition-colors">
           <RefreshCw className="w-3.5 h-3.5" /> Refresh
         </button>
@@ -155,7 +180,8 @@ export default function Dashboard() {
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
             {paged.map(leak => (
-              <LeakCard key={leak.id} leak={leak} onAck={handleAck} onFP={handleFP} />
+              <LeakCard key={leak.id} leak={leak} onAck={handleAck} onFP={handleFP}
+                onOpen={e => { e.stopPropagation(); setSelectedLeak(leak) }} />
             ))}
           </div>
         )}
@@ -174,6 +200,17 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {selectedLeak && (
+        <LeakDetailModal
+          leak={selectedLeak}
+          onClose={() => setSelectedLeak(null)}
+          onPatched={updated => {
+            setLeaks(ls => ls.map(l => l.id === updated.id ? { ...l, ...updated } : l))
+            setSelectedLeak(null)
+          }}
+        />
+      )}
     </div>
   )
 }

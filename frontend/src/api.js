@@ -1,4 +1,4 @@
-const BASE = '/api'
+const BASE = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
 
 function getToken() {
   return localStorage.getItem('fl_token')
@@ -46,10 +46,18 @@ export const api = {
   login: (username, password) => request('POST', '/auth/login', { username, password }),
   logout: () => request('POST', '/auth/logout'),
   me: () => request('GET', '/auth/me'),
+  changePassword: (current_password, new_password) =>
+    request('POST', '/auth/change-password', { current_password, new_password }),
 
   getExams: () => request('GET', '/exams'),
   createExam: (body) => request('POST', '/exams', body),
   getExam: (id) => request('GET', `/exams/${id}`),
+  updateExam: (id, body) => request('PATCH', `/exams/${id}`, body),
+  deleteExam: (id) => request('DELETE', `/exams/${id}`),
+  getQuestions: (examId, params = {}) => {
+    const qs = new URLSearchParams(params).toString()
+    return request('GET', `/exams/${examId}/questions${qs ? '?' + qs : ''}`)
+  },
 
   uploadQuestions: (examId, file) => {
     const fd = new FormData()
@@ -68,11 +76,19 @@ export const api = {
   },
   patchLeak: (id, body) => request('PATCH', `/leaks/${id}`, body),
 
-  getAlerts: () => request('GET', '/alerts'),
+  getAlerts: (params = {}) => {
+    const qs = new URLSearchParams(params).toString()
+    return request('GET', `/alerts${qs ? '?' + qs : ''}`)
+  },
+  retryAlert: (id) => request('POST', `/alerts/${id}/retry`),
+
   getScanners: () => request('GET', '/scanners'),
+  createScanner: (body) => request('POST', '/scanners', body),
   startScanner: (id) => request('POST', `/scanners/${id}/start`),
   stopScanner: (id) => request('POST', `/scanners/${id}/stop`),
   patchScanner: (id, body) => request('PATCH', `/scanners/${id}`, body),
 
   health: () => request('GET', '/health'),
+
+  notificationsUrl: () => `${BASE}/auth/notifications`,
 }
