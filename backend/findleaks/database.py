@@ -22,7 +22,12 @@ def _engine_kwargs(url: str) -> dict:
     """Return engine kwargs appropriate for the driver."""
     if "sqlite" in url:
         return {"connect_args": {"check_same_thread": False}}
-    return {"pool_pre_ping": True, "pool_size": 10, "max_overflow": 20}
+    return {
+        "pool_pre_ping": True,
+        "pool_size": 10,
+        "max_overflow": 20,
+        "connect_args": {"statement_cache_size": 0},
+    }
 
 
 settings = get_settings()
