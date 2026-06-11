@@ -1,9 +1,7 @@
 [build]
-builder = "nixpacks"
-buildCommand = "npm ci && npm run build"
+builder = "DOCKERFILE"
 
 [deploy]
-startCommand = "npx serve dist -s -p $PORT"
 healthcheckPath = "/"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
