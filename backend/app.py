@@ -90,17 +90,12 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-    _cors_origins = list({
-        settings.FRONTEND_URL,
-        "https://webfindleaks-production.up.railway.app",
-    })
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=_cors_origins,
-        allow_origin_regex=r"https://.*\.up\.railway\.app",
-        allow_credentials=True,
+        allow_origins=["*"],
+        allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
-        allow_headers=["*"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     @app.middleware("http")
