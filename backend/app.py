@@ -100,10 +100,20 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def add_request_id(request: Request, call_next):
+        if request.method == "OPTIONS":
+            from fastapi.responses import Response as _Resp
+            r = _Resp(status_code=200)
+            r.headers["Access-Control-Allow-Origin"] = "*"
+            r.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
+            r.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+            r.headers["Access-Control-Max-Age"] = "86400"
+            return r
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
         return response
 
     @app.exception_handler(Exception)
