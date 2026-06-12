@@ -17,19 +17,64 @@ _STOPWORDS = frozenset(
     "too very just as if then there this that these those".split()
 )
 
+_SYMBOL_MAP = str.maketrans({
+    "\u03bc": "u",   # μ (micro/mu) → u
+    "\u00b5": "u",   # µ (micro sign) → u
+    "\u03b1": "alpha",
+    "\u03b2": "beta",
+    "\u03b3": "gamma",
+    "\u03b4": "delta",
+    "\u03c0": "pi",
+    "\u03c9": "omega",
+    "\u03bb": "lambda",
+    "\u03b8": "theta",
+    "\u00b0": "deg",   # °
+    "\u00b2": "2",     # ²
+    "\u00b3": "3",     # ³
+    "\u221a": "sqrt",  # √
+    "\u221e": "inf",   # ∞
+    "\u2248": "approx",
+    "\u2260": "neq",
+    "\u2265": "gte",
+    "\u2264": "lte",
+    "\u00d7": "x",     # × (cross/multiply)
+    "\u00f7": "div",   # ÷
+    "\u2212": "-",     # − (minus sign)
+    "\u2019": "'",
+    "\u201c": '"',
+    "\u201d": '"',
+})
+
+_ANSWER_STRIP_RE = re.compile(
+    r"\b(?:answer|ans|sol(?:ution)?)\s*[\.\:\(]",
+    re.IGNORECASE,
+)
+
 
 # ---------------------------------------------------------------------------
 # Text utilities
 # ---------------------------------------------------------------------------
 
 def clean_text(text: str) -> str:
-    """Lowercase, strip non-ASCII, collapse whitespace, remove stopwords."""
+    """Lowercase, normalise symbols, strip non-ASCII, collapse whitespace, remove stopwords."""
+    text = text.translate(_SYMBOL_MAP)
     text = unicodedata.normalize("NFKD", text)
     text = text.encode("ascii", "ignore").decode("ascii")
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     tokens = [t for t in text.split() if t not in _STOPWORDS and len(t) > 1]
     return " ".join(tokens)
+
+
+def strip_answer_section(text: str) -> str:
+    """
+    Remove answer/solution text that appears after question choices.
+    e.g. strips "Answer (2) Sol. Potential difference…" from PDF-extracted questions.
+    """
+    match = _ANSWER_STRIP_RE.search(text)
+    if match:
+        return text[: match.start()].strip()
+    return text
 
 
 def split_questions(text: str) -> list[str]:
@@ -232,6 +277,8 @@ def ingest_file(
         progress.emit("progress", percent=60, message="Extracting questions…")
 
     questions = split_questions(raw_text)
+    questions = [strip_answer_section(q) for q in questions]
+    questions = [q for q in questions if len(q.strip()) > 20]
     logger.info("questions_extracted", file=filename, count=len(questions))
     return questions
 
