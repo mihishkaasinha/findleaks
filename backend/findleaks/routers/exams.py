@@ -283,16 +283,31 @@ async def upload_progress(
 
     async def event_stream():
         sent = 0
-        while True:
+        elapsed = 0
+        max_wait = 600  # 10-minute hard timeout
+        while elapsed < max_wait:
             events = progress.events[sent:]
             for ev in events:
                 yield f"data: {json.dumps(ev)}\n\n"
                 sent += 1
-            if any(e["type"] in ("complete", "error") for e in progress.events):
+            # Check terminal AFTER flushing so complete/error events are never missed
+            if any(e["type"] in ("complete", "error") for e in progress.events[:sent]):
                 break
-            await asyncio.sleep(0.5)
+            # Keepalive comment — prevents Railway/nginx from killing idle SSE connections
+            yield ": heartbeat\n\n"
+            await asyncio.sleep(1)
+            elapsed += 1
+        if elapsed >= max_wait:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Processing timed out'})}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
