@@ -466,6 +466,7 @@ async def scan_image(
             )
             for m in detection.matched_questions
         ],
+        ocr_text=detection.ocr_text,
         leak_id=leak_id,
         alert_sent=alert_sent,
         alert_recipients=recipients,

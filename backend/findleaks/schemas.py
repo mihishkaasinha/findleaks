@@ -147,6 +147,7 @@ class ScanResponse(AppBrandedModel):
     confidence_label: str
     matched_questions: int
     matched_excerpts: list[MatchedExcerpt]
+    ocr_text: Optional[str] = None
     leak_id: Optional[int] = None
     alert_sent: bool
     alert_recipients: list[str]

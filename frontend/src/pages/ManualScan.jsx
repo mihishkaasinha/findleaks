@@ -1,11 +1,50 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Loader2, ScanLine, Upload, X } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, FileText, Fingerprint, Loader2, ScanLine, ShieldAlert, ShieldCheck, Upload, X, Zap } from 'lucide-react'
 import { api } from '../api'
 
-const CONFIDENCE_COLORS = {
-  high: 'border-red-700 bg-red-950',
-  review: 'border-yellow-700 bg-yellow-950',
-  clean: 'border-green-700 bg-green-950',
+function highlightCommon(text, otherText) {
+  if (!text || !otherText) return text
+  const stopwords = new Set('a an the is are was were be been have has had do does did will would could should may might of in on at to for with by from and or but not no this that these those i we you he she it they'.split(' '))
+  const otherWords = new Set(
+    otherText.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2 && !stopwords.has(w))
+  )
+  const tokens = text.split(/(\s+)/)
+  return tokens.map((token, i) => {
+    const clean = token.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (clean.length > 2 && otherWords.has(clean)) {
+      return <mark key={i} className="bg-yellow-400/30 text-yellow-200 rounded px-0.5">{token}</mark>
+    }
+    return token
+  })
+}
+
+function ConfidenceMeter({ value, label }) {
+  const pct = Math.round(value * 100)
+  const color = label === 'high' ? '#ef4444' : label === 'review' ? '#eab308' : '#22c55e'
+  const circumference = 2 * Math.PI * 40
+  const dash = (pct / 100) * circumference
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <svg width="100" height="100" className="-rotate-90">
+        <circle cx="50" cy="50" r="40" fill="none" stroke="#1f2937" strokeWidth="8" />
+        <circle cx="50" cy="50" r="40" fill="none" stroke={color} strokeWidth="8"
+          strokeDasharray={`${dash} ${circumference}`}
+          strokeLinecap="round"
+          style={{ transition: 'stroke-dasharray 1s ease' }} />
+      </svg>
+      <div className="text-center -mt-16 mb-10">
+        <p className="text-2xl font-bold text-white">{pct}%</p>
+        <p className="text-xs text-gray-400">match</p>
+      </div>
+      <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+        label === 'high' ? 'bg-red-500/20 text-red-400 border border-red-700' :
+        label === 'review' ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-700' :
+        'bg-green-500/20 text-green-400 border border-green-700'
+      }`}>
+        {label === 'high' ? '⚠ HIGH RISK' : label === 'review' ? '◎ REVIEW' : '✓ CLEAN'}
+      </span>
+    </div>
+  )
 }
 
 export default function ManualScan() {
@@ -104,51 +143,95 @@ export default function ManualScan() {
         </button>
       </div>
 
-      {result && (
-        <div className={`border rounded-2xl p-5 space-y-3 ${CONFIDENCE_COLORS[result.confidence_label] || CONFIDENCE_COLORS.clean}`}>
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-semibold text-white">Scan Result</h2>
-            <span className={`text-xs font-bold px-2 py-1 rounded-full ${
-              result.confidence_label === 'high' ? 'bg-red-500 text-white' :
-              result.confidence_label === 'review' ? 'bg-yellow-500 text-black' :
-              'bg-green-500 text-black'
+      {result && (() => {
+        const top = result.matched_excerpts?.[0]
+        const isLeak = result.leak_detected
+        return (
+          <div className="space-y-4">
+            {/* Header verdict */}
+            <div className={`border rounded-2xl p-5 flex items-center gap-4 ${
+              isLeak ? 'border-red-700 bg-red-950/40' : 'border-green-700 bg-green-950/40'
             }`}>
-              {result.confidence_label?.toUpperCase()}
-            </span>
-          </div>
+              {isLeak
+                ? <ShieldAlert className="w-10 h-10 text-red-400 shrink-0" />
+                : <ShieldCheck className="w-10 h-10 text-green-400 shrink-0" />}
+              <div className="flex-1 min-w-0">
+                <p className="text-lg font-bold text-white">{isLeak ? 'Potential Leak Detected' : 'No Match Found'}</p>
+                <p className="text-sm text-gray-400">{result.exam} · {result.matched_questions} question{result.matched_questions !== 1 ? 's' : ''} matched
+                  {result.leak_id ? <span className="ml-2 font-mono text-xs text-gray-500">#{result.leak_id}</span> : null}
+                </p>
+              </div>
+              <ConfidenceMeter value={result.confidence} label={result.confidence_label} />
+            </div>
 
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="bg-black/20 rounded-lg p-3">
-              <p className="text-xl font-bold text-white">{(result.confidence * 100).toFixed(1)}%</p>
-              <p className="text-xs text-gray-400">Confidence</p>
-            </div>
-            <div className="bg-black/20 rounded-lg p-3">
-              <p className="text-xl font-bold text-white">{result.matched_questions}</p>
-              <p className="text-xs text-gray-400">Matched Qs</p>
-            </div>
-            <div className="bg-black/20 rounded-lg p-3">
-              <p className="text-xl font-bold text-white">{result.leak_detected ? 'YES' : 'NO'}</p>
-              <p className="text-xs text-gray-400">Leak Detected</p>
-            </div>
-          </div>
-
-          {result.matched_excerpts?.length > 0 && (
-            <div className="space-y-2">
-              <p className="text-xs font-medium text-gray-400">Matched Excerpts</p>
-              {result.matched_excerpts.slice(0, 3).map((ex, i) => (
-                <div key={i} className="bg-black/20 rounded-lg px-3 py-2 flex items-start justify-between gap-2">
-                  <p className="text-xs text-gray-300 line-clamp-2">{ex.text || `Question #${ex.question_id}`}</p>
-                  <span className="text-xs text-indigo-300 shrink-0">{(ex.score * 100).toFixed(0)}%</span>
+            {/* Side-by-side forensic panel */}
+            {top && (
+              <div className="border border-gray-700 rounded-2xl overflow-hidden">
+                <div className="grid grid-cols-2 divide-x divide-gray-700">
+                  {/* Left: OCR extracted from uploaded image */}
+                  <div className="p-4 space-y-2 bg-gray-900">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 uppercase tracking-wider">
+                      <Zap className="w-3.5 h-3.5" /> Extracted from Upload
+                    </div>
+                    <p className="text-sm text-gray-300 leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap">
+                      {result.ocr_text
+                        ? highlightCommon(result.ocr_text.slice(0, 600), top.text)
+                        : <span className="text-gray-600 italic">No text extracted</span>}
+                    </p>
+                  </div>
+                  {/* Right: Best matching question from bank */}
+                  <div className="p-4 space-y-2 bg-gray-900/60">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-yellow-400 uppercase tracking-wider">
+                        <Fingerprint className="w-3.5 h-3.5" /> Best Match in Question Bank
+                      </div>
+                      <span className="text-xs font-bold text-yellow-300 bg-yellow-500/20 px-2 py-0.5 rounded-full border border-yellow-700">
+                        {(top.score * 100).toFixed(1)}% similar
+                      </span>
+                    </div>
+                    <p className="text-sm text-gray-300 leading-relaxed max-h-48 overflow-y-auto whitespace-pre-wrap">
+                      {highlightCommon(top.text?.slice(0, 600) || `Question #${top.question_id}`, result.ocr_text || '')}
+                    </p>
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
+                <div className="bg-gray-800/50 px-4 py-2 flex items-center gap-2">
+                  <div className="flex-1 bg-gray-700 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all duration-1000 ${
+                        result.confidence_label === 'high' ? 'bg-red-500' :
+                        result.confidence_label === 'review' ? 'bg-yellow-500' : 'bg-green-500'
+                      }`}
+                      style={{ width: `${(top.score * 100).toFixed(0)}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-500">Similarity score</span>
+                </div>
+              </div>
+            )}
 
-          {result.leak_id && (
-            <p className="text-xs text-gray-400">Leak ID: <span className="text-white font-mono">#{result.leak_id}</span></p>
-          )}
-        </div>
-      )}
+            {/* All matches ranked */}
+            {result.matched_excerpts?.length > 1 && (
+              <div className="border border-gray-800 rounded-2xl p-4 space-y-2 bg-gray-900">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5" /> All Matched Questions
+                </p>
+                {result.matched_excerpts.map((ex, i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <span className="text-xs text-gray-600 w-4 shrink-0">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-400 truncate">{ex.text?.slice(0, 120) || `Question #${ex.question_id}`}</p>
+                      <div className="mt-1 h-1 bg-gray-800 rounded-full">
+                        <div className="h-1 rounded-full bg-indigo-500" style={{ width: `${(ex.score * 100).toFixed(0)}%` }} />
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono text-indigo-300 shrink-0">{(ex.score * 100).toFixed(1)}%</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }
