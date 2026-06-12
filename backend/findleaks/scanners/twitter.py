@@ -108,14 +108,18 @@ class TwitterScanner(BaseScanner):
         if label == "clean":
             return None
 
-        result = {
-            "platform": "twitter",
-            "post_id": post_id,
-            "exam_id": self.exam_id,
-            "exam_slug": self.exam_slug,
-            "confidence": conf,
-            "confidence_label": label,
-            "text_preview": post_text[:500],
-        }
-        logger.info("twitter_leak_detected", **{k: v for k, v in result.items() if k != "text_preview"})
-        return result
+        matched_ids = [idx for idx, _ in matches]
+        matched_excerpts = [{"question_id": idx, "score": s} for idx, s in matches]
+
+        logger.info("twitter_leak_detected", post_id=post_id, exam=self.exam_slug, confidence=conf)
+        await self._persist_leak(
+            platform="twitter",
+            post_id=post_id,
+            ocr_text=post_text,
+            confidence=conf,
+            label=label,
+            matched_ids=matched_ids,
+            matched_excerpts=matched_excerpts,
+            raw_payload={"text": post_text[:500]},
+        )
+        return {"platform": "twitter", "post_id": post_id, "confidence": conf, "label": label}

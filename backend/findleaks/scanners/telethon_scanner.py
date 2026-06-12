@@ -168,23 +168,67 @@ class TelethonScanner(BaseScanner):
                 logger.warning("telethon_history_failed", channel=username, error=str(exc))
 
     async def _listen(self, client) -> None:
-        """Register real-time message handler and idle until stopped."""
+        """Register real-time message handler (text + photos) and idle until stopped."""
         from telethon import events
 
         @client.on(events.NewMessage)
         async def handler(event):
             if not self._running:
                 return
-            text = event.message.text
-            if text:
-                post_id = f"tg_{event.message.id}"
-                await self.scan_post(text, post_id)
+            msg = event.message
+            post_id = f"tg_{msg.id}"
+
+            if msg.text:
+                await self.scan_post(msg.text, post_id)
+
+            elif msg.photo:
+                await self._scan_photo(client, msg, post_id)
 
         logger.info("telethon_listening", slug=self.exam_slug)
         while self._running:
             await asyncio.sleep(5)
 
         await client.disconnect()
+
+    async def _scan_photo(self, client, message, post_id: str) -> None:
+        """Download a Telegram photo, OCR it, run FAISS match, persist if leak."""
+        try:
+            from findleaks.detector import detect
+            from findleaks.config import get_settings
+
+            image_bytes: bytes = await client.download_media(message, bytes)
+            if not image_bytes:
+                return
+
+            settings = get_settings()
+            result = detect(image_bytes, self.exam_slug)
+
+            if result.confidence < settings.ALERT_THRESHOLD_REVIEW:
+                return
+
+            matched_ids = [m.question_id for m in result.matched_questions]
+            matched_excerpts = [
+                {"question_id": m.question_id, "text": m.text, "score": m.score}
+                for m in result.matched_questions
+            ]
+            logger.info(
+                "telethon_photo_leak_detected",
+                post_id=post_id,
+                exam=self.exam_slug,
+                confidence=result.confidence,
+            )
+            await self._persist_leak(
+                platform="telethon",
+                post_id=f"{post_id}_photo",
+                ocr_text=result.ocr_text,
+                confidence=result.confidence,
+                label=result.confidence_label,
+                matched_ids=matched_ids,
+                matched_excerpts=matched_excerpts,
+                raw_payload={"type": "photo", "message_id": message.id},
+            )
+        except Exception as exc:
+            logger.warning("telethon_photo_scan_failed", post_id=post_id, error=str(exc))
 
     async def scan_post(self, post_text: str, post_id: str) -> Optional[dict]:
         if post_id in self._seen_ids:
@@ -204,17 +248,18 @@ class TelethonScanner(BaseScanner):
         if label == "clean":
             return None
 
-        result = {
-            "platform": "telethon",
-            "post_id": post_id,
-            "exam_id": self.exam_id,
-            "exam_slug": self.exam_slug,
-            "confidence": conf,
-            "confidence_label": label,
-            "text_preview": post_text[:500],
-        }
-        logger.info(
-            "telethon_leak_detected",
-            **{k: v for k, v in result.items() if k != "text_preview"},
+        matched_ids = [idx for idx, _ in matches]
+        matched_excerpts = [{"question_id": idx, "score": s} for idx, s in matches]
+
+        logger.info("telethon_leak_detected", post_id=post_id, exam=self.exam_slug, confidence=conf)
+        await self._persist_leak(
+            platform="telethon",
+            post_id=post_id,
+            ocr_text=post_text,
+            confidence=conf,
+            label=label,
+            matched_ids=matched_ids,
+            matched_excerpts=matched_excerpts,
+            raw_payload={"text": post_text[:500]},
         )
-        return result
+        return {"platform": "telethon", "post_id": post_id, "confidence": conf, "label": label}
