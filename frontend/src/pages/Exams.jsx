@@ -71,87 +71,158 @@ function ExamCreateForm({ onCreated, onClose }) {
   )
 }
 
-function QuestionBankUpload({ exam, onClose }) {
-  const [file, setFile] = useState(null)
-  const [status, setStatus] = useState('idle')
-  const [progress, setProgress] = useState(0)
-  const [taskId, setTaskId] = useState(null)
-  const [message, setMessage] = useState('')
+function QuestionBankUpload({ exam, onClose, onUploaded }) {
+  const [queue, setQueue] = useState([])  // [{id, file, status, progress, message}]
+  const [busy, setBusy] = useState(false)
   const fileRef = useRef(null)
+  const processingRef = useRef(false)
+
+  const addFiles = (fileList) => {
+    const newEntries = Array.from(fileList).map(f => ({
+      id: `${f.name}-${Date.now()}-${Math.random()}`,
+      file: f,
+      status: 'pending',
+      progress: 0,
+      message: '',
+    }))
+    setQueue(q => [...q, ...newEntries])
+  }
 
   const handleDrop = (e) => {
     e.preventDefault()
-    const f = e.dataTransfer.files[0]
-    if (f) setFile(f)
+    addFiles(e.dataTransfer.files)
   }
 
-  const upload = async () => {
-    if (!file) return
-    setStatus('uploading')
-    try {
-      const res = await api.uploadQuestions(exam.id, file)
-      setTaskId(res.task_id)
-      setStatus('processing')
-      pollProgress(res.task_id)
-    } catch (err) {
-      setStatus('error')
-      setMessage(err.message)
-    }
-  }
-
-  const pollProgress = (tid) => {
+  const pollProgress = (examId, tid, entryId) => new Promise((resolve) => {
     const token = localStorage.getItem('fl_token')
-    const es = new EventSource(`/api/exams/${exam.id}/upload-progress/${tid}?token=${token}`)
+    const es = new EventSource(`/api/exams/${examId}/upload-progress/${tid}?token=${token}`)
     es.onmessage = (e) => {
       const ev = JSON.parse(e.data)
-      if (ev.type === 'progress') { setProgress(ev.percent); setMessage(ev.message) }
-      if (ev.type === 'complete') { setStatus('done'); setProgress(100); setMessage(`${ev.question_count} questions indexed`); es.close() }
-      if (ev.type === 'error') { setStatus('error'); setMessage(ev.message); es.close() }
+      if (ev.type === 'progress') {
+        setQueue(q => q.map(x => x.id === entryId ? { ...x, progress: ev.percent, message: ev.message } : x))
+      }
+      if (ev.type === 'complete') {
+        setQueue(q => q.map(x => x.id === entryId ? { ...x, status: 'done', progress: 100, message: `+${ev.question_count} questions added` } : x))
+        es.close()
+        resolve(ev.question_count || 0)
+      }
+      if (ev.type === 'error') {
+        setQueue(q => q.map(x => x.id === entryId ? { ...x, status: 'error', message: ev.message } : x))
+        es.close()
+        resolve(0)
+      }
     }
-    es.onerror = () => { es.close() }
+    es.onerror = () => { es.close(); resolve(0) }
+  })
+
+  const uploadAll = async () => {
+    if (processingRef.current) return
+    processingRef.current = true
+    setBusy(true)
+    let totalAdded = 0
+
+    setQueue(q => q.map(x => x.status === 'pending' ? { ...x, status: 'queued' } : x))
+
+    for (const entry of queue.filter(x => x.status === 'pending' || x.status === 'queued')) {
+      setQueue(q => q.map(x => x.id === entry.id ? { ...x, status: 'uploading', progress: 5 } : x))
+      try {
+        const res = await api.uploadQuestions(exam.id, entry.file)
+        setQueue(q => q.map(x => x.id === entry.id ? { ...x, status: 'processing', progress: 20, message: 'Processing…' } : x))
+        const count = await pollProgress(exam.id, res.task_id, entry.id)
+        totalAdded += count
+      } catch (err) {
+        setQueue(q => q.map(x => x.id === entry.id ? { ...x, status: 'error', message: err.message } : x))
+      }
+    }
+
+    setBusy(false)
+    processingRef.current = false
+    if (totalAdded > 0 && onUploaded) onUploaded(totalAdded)
+  }
+
+  const removeEntry = (id) => setQueue(q => q.filter(x => x.id !== id))
+
+  const pendingCount = queue.filter(x => x.status === 'pending' || x.status === 'queued').length
+  const doneCount = queue.filter(x => x.status === 'done').length
+
+  const statusIcon = (s) => {
+    if (s === 'done') return <span className="text-green-400 text-xs">✓</span>
+    if (s === 'error') return <span className="text-red-400 text-xs">✗</span>
+    if (s === 'uploading' || s === 'processing') return <Loader2 className="w-3 h-3 animate-spin text-indigo-400" />
+    return <span className="text-gray-600 text-xs">○</span>
   }
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-40 p-4">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-md space-y-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Upload Question Bank</h2>
+          <div>
+            <h2 className="text-lg font-semibold text-white">Upload Question Sets</h2>
+            <p className="text-xs text-gray-500 mt-0.5">Each file is added to the existing question bank — nothing is overwritten</p>
+          </div>
           <button onClick={onClose} className="text-gray-500 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-        <p className="text-sm text-gray-400">Exam: <span className="text-white">{exam.name}</span></p>
+        <p className="text-sm text-gray-400">Exam: <span className="text-white font-medium">{exam.name}</span>
+          <span className="text-gray-600 ml-2">({exam.question_count ?? 0} questions already indexed)</span>
+        </p>
 
         <div
           onDrop={handleDrop} onDragOver={e => e.preventDefault()}
-          className="border-2 border-dashed border-gray-700 rounded-xl p-6 text-center cursor-pointer hover:border-indigo-500 transition-colors"
+          className="border-2 border-dashed border-gray-700 rounded-xl p-5 text-center cursor-pointer hover:border-indigo-500 transition-colors"
           onClick={() => fileRef.current?.click()}
         >
-          <Upload className="w-8 h-8 text-gray-600 mx-auto mb-2" />
-          <p className="text-sm text-gray-400">{file ? file.name : 'Drop PDF or image here, or click to browse'}</p>
-          <input ref={fileRef} type="file" accept=".pdf,image/*" className="hidden" onChange={e => setFile(e.target.files[0])} />
+          <Upload className="w-7 h-7 text-gray-600 mx-auto mb-1.5" />
+          <p className="text-sm text-gray-400">Drop PDFs or images here, or <span className="text-indigo-400">click to browse</span></p>
+          <p className="text-xs text-gray-600 mt-0.5">Select multiple files at once</p>
+          <input ref={fileRef} type="file" accept=".pdf,image/*" multiple className="hidden"
+            onChange={e => { addFiles(e.target.files); e.target.value = '' }} />
         </div>
 
-        {status === 'processing' || status === 'uploading' ? (
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs text-gray-400">
-              <span>{message || 'Processing…'}</span>
-              <span>{progress}%</span>
-            </div>
-            <div className="w-full bg-gray-800 rounded-full h-1.5">
-              <div className="bg-indigo-500 h-1.5 rounded-full transition-all" style={{ width: `${progress}%` }} />
-            </div>
+        {queue.length > 0 && (
+          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+            {queue.map(entry => (
+              <div key={entry.id} className="bg-gray-800 rounded-lg px-3 py-2 space-y-1">
+                <div className="flex items-center gap-2">
+                  {statusIcon(entry.status)}
+                  <span className="text-xs text-gray-300 flex-1 truncate">{entry.file.name}</span>
+                  {entry.status === 'pending' && !busy && (
+                    <button onClick={() => removeEntry(entry.id)} className="text-gray-600 hover:text-red-400">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {entry.message && (
+                    <span className={`text-xs shrink-0 ${entry.status === 'done' ? 'text-green-400' : entry.status === 'error' ? 'text-red-400' : 'text-gray-500'}`}>
+                      {entry.message}
+                    </span>
+                  )}
+                </div>
+                {(entry.status === 'uploading' || entry.status === 'processing') && (
+                  <div className="w-full bg-gray-700 rounded-full h-1">
+                    <div className="bg-indigo-500 h-1 rounded-full transition-all" style={{ width: `${entry.progress}%` }} />
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-        ) : null}
+        )}
 
-        {status === 'done' && <p className="text-sm text-green-400">✓ {message}</p>}
-        {status === 'error' && <p className="text-sm text-red-400">✗ {message}</p>}
+        {doneCount > 0 && !busy && (
+          <p className="text-xs text-green-400">✓ {doneCount} file{doneCount > 1 ? 's' : ''} uploaded successfully</p>
+        )}
 
         <div className="flex gap-2">
-          <button onClick={upload} disabled={!file || status === 'processing' || status === 'uploading' || status === 'done'}
-            className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium text-white flex items-center justify-center gap-2">
-            {(status === 'uploading' || status === 'processing') && <Loader2 className="w-4 h-4 animate-spin" />}
-            Upload
+          <button
+            onClick={uploadAll}
+            disabled={busy || pendingCount === 0}
+            className="flex-1 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-sm font-medium text-white flex items-center justify-center gap-2"
+          >
+            {busy && <Loader2 className="w-4 h-4 animate-spin" />}
+            {busy ? 'Uploading…' : `Upload ${pendingCount > 0 ? `${pendingCount} file${pendingCount > 1 ? 's' : ''}` : ''}`}
           </button>
-          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-gray-300">Close</button>
+          <button onClick={onClose} disabled={busy}
+            className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-sm text-gray-300">
+            {doneCount > 0 && !busy ? 'Done' : 'Cancel'}
+          </button>
         </div>
       </div>
     </div>
@@ -291,7 +362,15 @@ export default function Exams() {
       )}
 
       {showCreate && <ExamCreateForm onCreated={e => { setExams(es => [e, ...es]); setShowCreate(false) }} onClose={() => setShowCreate(false)} />}
-      {uploadExam && <QuestionBankUpload exam={uploadExam} onClose={() => setUploadExam(null)} />}
+      {uploadExam && (
+        <QuestionBankUpload
+          exam={uploadExam}
+          onClose={() => setUploadExam(null)}
+          onUploaded={(added) => setExams(es => es.map(e =>
+            e.id === uploadExam.id ? { ...e, question_count: (e.question_count || 0) + added } : e
+          ))}
+        />
+      )}
       {editExam && <ExamEditModal exam={editExam} onSaved={updated => { setExams(es => es.map(e => e.id === updated.id ? { ...e, ...updated } : e)); setEditExam(null) }} onClose={() => setEditExam(null)} />}
     </div>
   )
