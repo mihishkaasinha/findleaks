@@ -131,17 +131,24 @@ def search_faiss(
 
 def compute_confidence(raw_scores: list[float]) -> float:
     """
-    Confidence formula: weighted average of top scores with diminishing weights.
-    w_i = 1 / (i+1), normalised.
-    Returns float in [0.0, 1.0].
+    Confidence = top-1 cosine score + small multi-match boost.
+
+    Calibration for all-MiniLM-L6-v2 after clean_text + OCR noise:
+      >= 0.65  → near-certain match (identical question, clean image)
+      0.45-0.65 → likely match (same question, OCR/encoding variation)
+      0.35-0.45 → possible match (related content, review needed)
+      <  0.35  → noise / unrelated
+
+    The old weighted-average formula diluted the top score with irrelevant
+    matches, causing true positives to fall below the review threshold.
     """
     if not raw_scores:
         return 0.0
-    scores = raw_scores[:5]
-    weights = [1.0 / (i + 1) for i in range(len(scores))]
-    total_weight = sum(weights)
-    confidence = sum(s * w for s, w in zip(scores, weights)) / total_weight
-    return round(min(max(confidence, 0.0), 1.0), 4)
+    top = raw_scores[0]
+    high_matches = sum(1 for s in raw_scores[1:] if s >= 0.38)
+    boost = min(high_matches * 0.025, 0.08)
+    confidence = min(top + boost, 1.0)
+    return round(confidence, 4)
 
 
 def confidence_label(confidence: float) -> str:
