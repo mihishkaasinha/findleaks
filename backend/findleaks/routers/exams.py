@@ -268,6 +268,33 @@ async def upload_questions(
 
 
 # ---------------------------------------------------------------------------
+# GET /exams/{exam_id}/upload-status/{task_id}  (REST polling fallback)
+# ---------------------------------------------------------------------------
+
+@router.get("/{exam_id}/upload-status/{task_id}")
+async def upload_status(
+    exam_id: int,
+    task_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    progress = _UPLOAD_TASKS.get(task_id)
+    if not progress:
+        return {"found": False, "done": False}
+    events = progress.events
+    complete = next((e for e in events if e["type"] == "complete"), None)
+    error = next((e for e in events if e["type"] == "error"), None)
+    latest_progress = next((e for e in reversed(events) if e["type"] == "progress"), None)
+    return {
+        "found": True,
+        "done": bool(complete or error),
+        "complete": complete,
+        "error": error,
+        "percent": latest_progress.get("percent", 0) if latest_progress else 0,
+        "message": (complete or error or latest_progress or {}).get("message", ""),
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /exams/{exam_id}/upload-progress/{task_id}  (SSE)
 # ---------------------------------------------------------------------------
 

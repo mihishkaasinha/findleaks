@@ -64,6 +64,7 @@ export const api = {
     fd.append('file', file)
     return upload(`/exams/${examId}/upload-questions`, fd)
   },
+  uploadStatus: (examId, taskId) => request('GET', `/exams/${examId}/upload-status/${taskId}`),
   scanImage: (examId, file) => {
     const fd = new FormData()
     fd.append('file', file)

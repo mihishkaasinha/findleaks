@@ -95,8 +95,44 @@ function QuestionBankUpload({ exam, onClose, onUploaded }) {
 
   const pollProgress = (examId, tid, entryId) => new Promise((resolve) => {
     const token = localStorage.getItem('fl_token')
+    let resolved = false
+    let lastEventAt = Date.now()
+    let stallTimer = null
+    let pollInterval = null
+
+    const finish = (count) => {
+      if (resolved) return
+      resolved = true
+      clearTimeout(stallTimer)
+      clearInterval(pollInterval)
+      resolve(count)
+    }
+
+    // REST fallback — polls /upload-status every 3s
+    const startPolling = () => {
+      if (pollInterval) return
+      pollInterval = setInterval(async () => {
+        try {
+          const s = await api.uploadStatus(examId, tid)
+          if (!s.found) return
+          if (s.percent > 0) {
+            setQueue(q => q.map(x => x.id === entryId ? { ...x, progress: s.percent, message: s.message } : x))
+          }
+          if (s.complete) {
+            setQueue(q => q.map(x => x.id === entryId ? { ...x, status: 'done', progress: 100, message: `+${s.complete.question_count} questions added` } : x))
+            finish(s.complete.question_count || 0)
+          } else if (s.error) {
+            setQueue(q => q.map(x => x.id === entryId ? { ...x, status: 'error', message: s.error.message } : x))
+            finish(0)
+          }
+        } catch (_) {}
+      }, 3000)
+    }
+
+    // SSE primary
     const es = new EventSource(`/api/exams/${examId}/upload-progress/${tid}?token=${token}`)
     es.onmessage = (e) => {
+      lastEventAt = Date.now()
       const ev = JSON.parse(e.data)
       if (ev.type === 'progress') {
         setQueue(q => q.map(x => x.id === entryId ? { ...x, progress: ev.percent, message: ev.message } : x))
@@ -104,15 +140,23 @@ function QuestionBankUpload({ exam, onClose, onUploaded }) {
       if (ev.type === 'complete') {
         setQueue(q => q.map(x => x.id === entryId ? { ...x, status: 'done', progress: 100, message: `+${ev.question_count} questions added` } : x))
         es.close()
-        resolve(ev.question_count || 0)
+        finish(ev.question_count || 0)
       }
       if (ev.type === 'error') {
         setQueue(q => q.map(x => x.id === entryId ? { ...x, status: 'error', message: ev.message } : x))
         es.close()
-        resolve(0)
+        finish(0)
       }
     }
-    es.onerror = () => { es.close(); resolve(0) }
+    // If SSE drops or goes silent for 8s, fall back to REST polling
+    es.onerror = () => { es.close(); startPolling() }
+    stallTimer = setInterval(() => {
+      if (Date.now() - lastEventAt > 8000) {
+        es.close()
+        startPolling()
+        clearInterval(stallTimer)
+      }
+    }, 2000)
   })
 
   const uploadAll = async () => {
