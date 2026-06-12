@@ -3,8 +3,11 @@ import { Loader2, Pause, Play, Plus, Radio, RefreshCw, X } from 'lucide-react'
 import { api } from '../api'
 
 const PLATFORM_COLORS = {
-  twitter: 'bg-sky-900 text-sky-300 border-sky-700',
+  twitter:  'bg-sky-900 text-sky-300 border-sky-700',
   telegram: 'bg-blue-900 text-blue-300 border-blue-700',
+  reddit:   'bg-orange-900 text-orange-300 border-orange-700',
+  discord:  'bg-violet-900 text-violet-300 border-violet-700',
+  pastebin: 'bg-green-900 text-green-300 border-green-700',
 }
 
 function AddScannerModal({ onCreated, onClose }) {
@@ -56,6 +59,9 @@ function AddScannerModal({ onCreated, onClose }) {
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
               <option value="twitter">Twitter / X</option>
               <option value="telegram">Telegram</option>
+              <option value="reddit">Reddit</option>
+              <option value="discord">Discord</option>
+              <option value="pastebin">Pastebin</option>
             </select>
           </div>
           {error && <p className="text-xs text-red-400">{error}</p>}
