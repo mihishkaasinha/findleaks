@@ -32,11 +32,13 @@ async def lifespan(app: FastAPI):
     await create_tables()
     logger.info("database_tables_ready")
 
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    os.makedirs(settings.FAISS_INDEX_DIR, exist_ok=True)
+
     _load_faiss_indexes(settings.FAISS_INDEX_DIR)
     _load_sentence_model()
 
-    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-    os.makedirs(settings.FAISS_INDEX_DIR, exist_ok=True)
+    await _rebuild_missing_indexes(settings.FAISS_INDEX_DIR)
 
     logger.info("startup_complete", app=settings.APP_NAME)
     yield
@@ -72,6 +74,55 @@ def _load_sentence_model() -> None:
         logger.info("sentence_model_loaded")
     except Exception as exc:
         logger.warning("sentence_model_load_failed", error=str(exc))
+
+
+async def _rebuild_missing_indexes(index_dir: str) -> None:
+    """
+    For every exam in the DB that has questions but no FAISS index on disk,
+    rebuild the index automatically so it survives redeployments.
+    """
+    import asyncio
+    import functools
+    from findleaks import state
+    from findleaks.database import AsyncSessionLocal
+    from findleaks.models import Exam, Question
+    from findleaks.ingestion import build_index_for_exam, clean_text
+    from sqlalchemy import select
+
+    if state.sentence_model is None:
+        logger.warning("rebuild_skipped_no_model")
+        return
+
+    try:
+        async with AsyncSessionLocal() as session:
+            exams = (await session.execute(select(Exam))).scalars().all()
+            for exam in exams:
+                index_path = os.path.join(index_dir, f"{exam.slug}.index")
+                if exam.slug in state.faiss_indexes:
+                    continue
+                if os.path.exists(index_path):
+                    continue
+                rows = (await session.execute(
+                    select(Question.question_text).where(Question.exam_id == exam.id)
+                )).scalars().all()
+                if not rows:
+                    continue
+                questions = list(rows)
+                logger.info("rebuilding_faiss_index", slug=exam.slug, questions=len(questions))
+                try:
+                    loop = asyncio.get_event_loop()
+                    await loop.run_in_executor(
+                        None,
+                        functools.partial(
+                            build_index_for_exam,
+                            questions, exam.slug, index_dir,
+                        ),
+                    )
+                    logger.info("faiss_index_rebuilt", slug=exam.slug)
+                except Exception as exc:
+                    logger.error("faiss_rebuild_failed", slug=exam.slug, error=str(exc))
+    except Exception as exc:
+        logger.error("rebuild_missing_indexes_failed", error=str(exc))
 
 
 def create_app() -> FastAPI:
