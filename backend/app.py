@@ -26,21 +26,27 @@ logger = structlog.get_logger()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
     settings = get_settings()
     logger.info("startup_begin", app=settings.APP_NAME)
 
+    # Fast sync work — done before accepting traffic
     await create_tables()
     logger.info("database_tables_ready")
-
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
     os.makedirs(settings.FAISS_INDEX_DIR, exist_ok=True)
-
+    # Load any already-saved indexes from disk (fast — just reads files)
     _load_faiss_indexes(settings.FAISS_INDEX_DIR)
-    _load_sentence_model()
 
-    await _rebuild_missing_indexes(settings.FAISS_INDEX_DIR)
+    # Yield immediately so /api/health can respond and Railway healthcheck passes.
+    # Model loading + index rebuilding run in the background.
+    async def _warm_up():
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _load_sentence_model)
+        await _rebuild_missing_indexes(settings.FAISS_INDEX_DIR)
+        logger.info("startup_complete", app=settings.APP_NAME)
 
-    logger.info("startup_complete", app=settings.APP_NAME)
+    asyncio.create_task(_warm_up())
     yield
 
     await dispose_engine()
