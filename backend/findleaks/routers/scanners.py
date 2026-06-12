@@ -30,7 +30,7 @@ async def create_scanner(
     db: AsyncSession = Depends(get_db),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    _ALLOWED = ("twitter", "telegram", "reddit", "discord", "pastebin")
+    _ALLOWED = ("twitter", "telegram", "telethon", "reddit", "discord", "pastebin")
     if body.platform not in _ALLOWED:
         raise HTTPException(status_code=400, detail={"error": "unsupported_platform", "allowed": list(_ALLOWED)})
     exam = (await db.execute(select(Exam).where(Exam.id == body.exam_id))).scalar_one_or_none()
@@ -102,6 +102,9 @@ async def start_scanner(
     elif row.platform == "telegram":
         from findleaks.scanners.telegram import TelegramScanner
         scanner = TelegramScanner(exam_id=row.exam_id, exam_slug=exam.slug, keywords=keywords)
+    elif row.platform == "telethon":
+        from findleaks.scanners.telethon_scanner import TelethonScanner
+        scanner = TelethonScanner(exam_id=row.exam_id, exam_slug=exam.slug, keywords=keywords)
     elif row.platform == "reddit":
         from findleaks.scanners.reddit import RedditScanner
         scanner = RedditScanner(exam_id=row.exam_id, exam_slug=exam.slug, keywords=keywords)

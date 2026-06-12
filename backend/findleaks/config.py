@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # --- Discord Bot (required for Discord scanner) ---
     DISCORD_BOT_TOKEN: str = ""
 
+    # --- Telethon MTProto user account (required for TelethonScanner) ---
+    TELEGRAM_API_ID: str = ""         # from https://my.telegram.org/apps
+    TELEGRAM_API_HASH: str = ""       # from https://my.telegram.org/apps
+    TELEGRAM_PHONE: str = ""          # e.g. +919876543210
+    TELEGRAM_OTP: str = ""            # set once during first-run auth, then clear
+    TELEGRAM_CHANNELS: str = ""       # comma-separated: JEE2025Leaks,examdrops,...
+
     # --- Pastebin (optional — uses public archive if not set) ---
     PASTEBIN_API_KEY: str = ""
 

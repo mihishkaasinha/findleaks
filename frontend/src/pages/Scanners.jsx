@@ -8,6 +8,7 @@ const PLATFORM_COLORS = {
   reddit:   'bg-orange-900 text-orange-300 border-orange-700',
   discord:  'bg-violet-900 text-violet-300 border-violet-700',
   pastebin: 'bg-green-900 text-green-300 border-green-700',
+  telethon: 'bg-teal-900 text-teal-300 border-teal-700',
 }
 
 function AddScannerModal({ onCreated, onClose }) {
@@ -58,7 +59,8 @@ function AddScannerModal({ onCreated, onClose }) {
             <select value={platform} onChange={e => setPlatform(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
               <option value="twitter">Twitter / X</option>
-              <option value="telegram">Telegram</option>
+              <option value="telegram">Telegram (Bot)</option>
+              <option value="telethon">Telegram (User / Telethon)</option>
               <option value="reddit">Reddit</option>
               <option value="discord">Discord</option>
               <option value="pastebin">Pastebin</option>
