@@ -243,9 +243,12 @@ def build_index_for_exam(
     progress: IngestionProgress | None = None,
 ) -> tuple[int, str]:
     """
-    Embed questions and build/save FAISS index.
-    Returns (question_count, index_path).
+    Embed questions and merge into the existing FAISS index (or create new).
+    Returns (new_question_count, index_path).
+    Multiple uploads accumulate — existing vectors are preserved.
     """
+    import faiss
+
     if not questions:
         raise ValueError("No questions to index")
 
@@ -260,9 +263,23 @@ def build_index_for_exam(
     embeddings = embed_questions(non_empty)
 
     if progress:
-        progress.emit("progress", percent=90, message="Building FAISS index…")
+        progress.emit("progress", percent=90, message="Merging into FAISS index…")
 
-    index = build_faiss_index(embeddings)
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1e-10, norms)
+    normalized = (embeddings / norms).astype(np.float32)
+
+    existing_path = os.path.join(index_dir, f"{exam_slug}.index")
+    if os.path.exists(existing_path):
+        index = faiss.read_index(existing_path)
+        index.add(normalized)
+        logger.info("faiss_index_merged", slug=exam_slug, added=len(non_empty), total=index.ntotal)
+    else:
+        dim = normalized.shape[1]
+        index = faiss.IndexFlatIP(dim)
+        index.add(normalized)
+        logger.info("faiss_index_created", slug=exam_slug, total=index.ntotal)
+
     path = save_faiss_index(index, exam_slug, index_dir)
 
     if progress:

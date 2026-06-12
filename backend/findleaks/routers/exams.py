@@ -226,12 +226,22 @@ async def upload_questions(
     async def run_ingestion():
         from findleaks.database import AsyncSessionLocal
         from findleaks.ingestion import clean_text as _clean
+        import functools
+        loop = asyncio.get_event_loop()
         try:
-            questions = ingest_file(
-                content, source_filename or "upload", exam_slug, save_dir, progress
+            questions = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    ingest_file,
+                    content, source_filename or "upload", exam_slug, save_dir, progress,
+                ),
             )
-            count, _ = build_index_for_exam(
-                questions, exam_slug, settings.FAISS_INDEX_DIR, progress
+            count, _ = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    build_index_for_exam,
+                    questions, exam_slug, settings.FAISS_INDEX_DIR, progress,
+                ),
             )
             async with AsyncSessionLocal() as bg_session:
                 _exam = (
@@ -245,7 +255,7 @@ async def upload_questions(
                             cleaned_text=_clean(raw_q),
                             source_file=source_filename,
                         ))
-                    _exam.question_count = count
+                    _exam.question_count = (_exam.question_count or 0) + count
                     _exam.last_indexed_at = datetime.now(timezone.utc)
                     await bg_session.commit()
             logger.info("ingestion_done", exam_id=exam_id, count=count)
