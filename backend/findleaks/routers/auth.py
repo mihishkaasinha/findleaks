@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from findleaks.auth import get_current_user, hash_password, verify_password
+from findleaks.auth import get_current_user, get_current_user_sse, hash_password, verify_password
 from findleaks.config import get_settings
 from findleaks.schemas import LoginRequest, LoginResponse, MeResponse
 
@@ -87,7 +87,7 @@ async def change_password(
 
 @router.get("/notifications")
 async def notifications_stream(
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_sse),
 ) -> StreamingResponse:
     q: asyncio.Queue = asyncio.Queue(maxsize=50)
     _notification_queues.append(q)

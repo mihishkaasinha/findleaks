@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from findleaks.alerts import dispatch_alerts
 from findleaks.routers.auth import push_notification
-from findleaks.auth import get_current_user
+from findleaks.auth import get_current_user, get_current_user_sse
 from findleaks.config import get_settings
 from findleaks.database import get_db
 from findleaks.detector import detect
@@ -275,7 +275,7 @@ async def upload_questions(
 async def upload_progress(
     exam_id: int,
     task_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_sse),
 ) -> StreamingResponse:
     progress = _UPLOAD_TASKS.get(task_id)
     if not progress:
