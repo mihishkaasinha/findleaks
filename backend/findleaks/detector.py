@@ -80,9 +80,8 @@ def ocr_image(image_bytes: bytes) -> str:
         import pytesseract
 
         processed = preprocess_image(image_bytes)
-        # PSM 4 = single column of variable-size text — best for exam papers
         text = pytesseract.image_to_string(
-            processed, config="--oem 3 --psm 4"
+            processed, config="--oem 3 --psm 6"
         ).strip()
 
         # Fallback: if preprocessing produced no text, try raw grayscale

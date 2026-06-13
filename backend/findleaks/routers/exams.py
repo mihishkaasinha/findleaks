@@ -375,7 +375,9 @@ async def scan_image(
         )
     )
     dup = dup_result.scalar_one_or_none()
-    if dup:
+    # Only use the cached result if it was an actual detection.
+    # A cached clean/0% result (from broken OCR) must not block a fresh scan.
+    if dup and dup.confidence_label in ("high", "review"):
         return ScanResponse(
             status="duplicate",
             leak_detected=dup.confidence_label in ("high", "review"),
