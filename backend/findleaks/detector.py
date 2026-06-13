@@ -264,8 +264,8 @@ def detect(
             combined = faiss_score * (1.0 + 0.40 * wj + 0.30 * cj)
             scored.append((idx, faiss_score, min(combined, 1.0)))
         scored.sort(key=lambda x: x[2], reverse=True)
-        # raw_scores still use FAISS scores (for calibrated confidence)
-        raw_scores = [s[1] for s in scored]
+        # Use combined scores for confidence — consistent with displayed match %
+        raw_scores = [s[2] for s in scored]
         confidence = compute_confidence(raw_scores)
         label = confidence_label(confidence)
 
