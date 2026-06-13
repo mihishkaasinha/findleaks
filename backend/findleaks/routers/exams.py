@@ -453,6 +453,10 @@ async def scan_image(
             ))
             leak.alert_sent = True
 
+        # Commit NOW before the SSE push so the leak is visible in DB
+        # when the Dashboard's getLeaks() arrives (avoids flush-not-committed race).
+        await db.commit()
+
     if leak_id:
         push_notification({
             "type": "new_leak",
