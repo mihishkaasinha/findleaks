@@ -96,7 +96,7 @@ async def get_leak(
     excerpts = [
         LeakExcerptDetail(
             question_id=e.get("question_id", 0),
-            text=q_texts.get(e.get("question_id"), None),
+            text=e.get("text") or q_texts.get(e.get("question_id")),
             score=float(e.get("score", 0.0)),
         )
         for e in raw_excerpts
