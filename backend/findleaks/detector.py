@@ -177,14 +177,10 @@ def detect(
             confidence_label="clean",
         )
 
-    settings = get_settings()
     matches = search_faiss(ocr_text, exam_slug, top_k=top_k)
 
-    # Filter out noise: FAISS always returns nearest neighbours even for unrelated text.
-    # Only keep matches whose cosine similarity is at or above the review threshold.
-    min_score = settings.ALERT_THRESHOLD_REVIEW  # 0.45 by default
-    matches = [(idx, score) for idx, score in matches if score >= min_score]
-
+    # Always keep the top matches for forensic display.
+    # Scoring/labelling thresholds are applied via confidence_label(), not by filtering here.
     raw_scores = [score for _, score in matches]
     confidence = compute_confidence(raw_scores)
     label = confidence_label(confidence)

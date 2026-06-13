@@ -378,7 +378,7 @@ async def scan_image(
     if dup:
         return ScanResponse(
             status="duplicate",
-            leak_detected=dup.confidence >= settings.ALERT_THRESHOLD_REVIEW,
+            leak_detected=dup.confidence_label in ("high", "review"),
             exam=exam.name,
             exam_id=exam_id,
             confidence=dup.confidence,
@@ -452,7 +452,7 @@ async def scan_image(
 
     return ScanResponse(
         status="success",
-        leak_detected=detection.confidence >= settings.ALERT_THRESHOLD_REVIEW,
+        leak_detected=detection.confidence_label in ("high", "review"),
         exam=exam.name,
         exam_id=exam_id,
         confidence=detection.confidence,
