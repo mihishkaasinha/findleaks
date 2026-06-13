@@ -62,7 +62,7 @@ def clean_text(text: str) -> str:
     text = text.encode("ascii", "ignore").decode("ascii")
     text = text.lower()
     text = re.sub(r"[^a-z0-9\s]", " ", text)
-    tokens = [t for t in text.split() if t not in _STOPWORDS and len(t) > 1]
+    tokens = [t for t in text.split() if t not in _STOPWORDS and len(t) > 2]
     return " ".join(tokens)
 
 

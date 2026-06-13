@@ -40,11 +40,11 @@ class DetectionResult:
 
 def preprocess_image(image_bytes: bytes) -> "np.ndarray":
     """
-    OpenCV pipeline:
-    1. Decode from bytes
-    2. Convert to grayscale
-    3. Gaussian blur to reduce noise
-    4. Adaptive threshold for binarisation (improves OCR accuracy)
+    OpenCV pipeline optimised for phone-photo exam images:
+    1. Decode + grayscale
+    2. Upscale to >=1500px width (Tesseract accuracy improves with higher DPI)
+    3. Denoise (fastNlMeans) + sharpen
+    4. OTSU global threshold (more stable than adaptive for printed text)
     """
     import cv2
 
@@ -54,10 +54,26 @@ def preprocess_image(image_bytes: bytes) -> "np.ndarray":
         raise ValueError("cv2.imdecode failed — invalid image bytes")
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-    thresh = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-    )
+
+    # Upscale small images — Tesseract needs ~300 DPI; target >= 1500px wide
+    h, w = gray.shape
+    if w < 1500:
+        scale = max(1500 / w, 2.0)
+        gray = cv2.resize(gray, None, fx=scale, fy=scale,
+                          interpolation=cv2.INTER_CUBIC)
+
+    # Denoise without blurring fine strokes (subscripts, μF symbols)
+    gray = cv2.fastNlMeansDenoising(gray, None, h=15,
+                                     templateWindowSize=7, searchWindowSize=21)
+
+    # Sharpen to recover edge detail lost in upscale
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+    gray = cv2.filter2D(gray, -1, kernel)
+    gray = np.clip(gray, 0, 255).astype(np.uint8)
+
+    # OTSU global threshold — better than adaptive for printed exam paper
+    _, thresh = cv2.threshold(gray, 0, 255,
+                               cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return thresh
 
 
@@ -71,7 +87,11 @@ def ocr_image(image_bytes: bytes) -> str:
         import pytesseract
 
         processed = preprocess_image(image_bytes)
-        text = pytesseract.image_to_string(processed, config="--oem 3 --psm 6")
+        # PSM 4 = single column of text of variable sizes — best for exam papers
+        text = pytesseract.image_to_string(
+            processed,
+            config="--oem 3 --psm 4 --dpi 300 -c preserve_interword_spaces=1"
+        )
         return text.strip()
     except Exception as exc:
         logger.warning("ocr_failed", error=str(exc))
@@ -133,10 +153,10 @@ def compute_confidence(raw_scores: list[float]) -> float:
     """
     Confidence = top-1 cosine score + small multi-match boost.
 
-    Calibration for all-MiniLM-L6-v2 after clean_text + OCR noise:
-      >= 0.82  → near-certain match (identical question, clean image)
-      0.72-0.82 → likely match (same question, OCR/encoding variation)
-      <  0.72  → noise / different topic (same domain still scores 0.50-0.72)
+    Calibration for all-MiniLM-L6-v2 after clean_text + phone-photo OCR:
+      >= 0.68  → HIGH RISK: very likely same question (OCR noise reduces true score)
+      0.52-0.68 → REVIEW: possibly same question, needs human check
+      <  0.52  → CLEAN: different topic / unrelated content
 
     The old weighted-average formula diluted the top score with irrelevant
     matches, causing true positives to fall below the review threshold.
@@ -144,7 +164,7 @@ def compute_confidence(raw_scores: list[float]) -> float:
     if not raw_scores:
         return 0.0
     top = raw_scores[0]
-    high_matches = sum(1 for s in raw_scores[1:] if s >= 0.72)
+    high_matches = sum(1 for s in raw_scores[1:] if s >= 0.52)
     boost = min(high_matches * 0.025, 0.08)
     confidence = min(top + boost, 1.0)
     return round(confidence, 4)
