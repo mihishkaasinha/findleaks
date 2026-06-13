@@ -1,0 +1,9 @@
+A particle moves in a straight line with velocity v = 3t² + 2t + 1 m/s. Find its displacement after 2 seconds.
+
+Options:
+A) 10 m
+B) 12 m  
+C) 14 m
+D) 16 m
+
+Correct Answer: B) 12 m

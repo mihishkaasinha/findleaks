@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { Loader2, Pause, Play, Plus, Radio, RefreshCw, X } from 'lucide-react'
+import { Loader2, Pause, Play, Plus, Radio, RefreshCw, X, Zap } from 'lucide-react'
 import { api } from '../api'
 
 const PLATFORM_COLORS = {
@@ -98,6 +98,35 @@ export default function Scanners() {
 
   useEffect(() => { load() }, [load])
 
+  const createDemoPaste = async () => {
+    const pasteText = `JEE Main 2025 - Physics Question
+
+A particle moves in a straight line with velocity v = 3t² + 2t + 1 m/s.
+Find its displacement after 2 seconds.
+
+Options:
+A) 10 m
+B) 12 m  
+C) 14 m
+D) 16 m
+
+#JEE #Physics #ExamLeaks`
+
+    // Open Pastebin in new tab with pre-filled content
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = 'https://pastebin.com/api/api_post.php'
+    form.target = '_blank'
+    
+    // For demo, we'll just open Pastebin with instructions
+    window.open('https://pastebin.com', '_blank')
+    
+    // Copy to clipboard for easy pasting
+    navigator.clipboard.writeText(pasteText).then(() => {
+      alert('Demo paste text copied to clipboard!\n\n1. Pastebin will open in new tab\n2. Paste the text (Ctrl+V)\n3. Title: "JEE Physics Question"\n4. Click "Create New Paste"\n5. Wait 30 seconds for scanner to detect it')
+    })
+  }
+
   const toggle = async (scanner) => {
     setActionId(scanner.id)
     try {
@@ -124,6 +153,10 @@ export default function Scanners() {
         <div className="flex items-center gap-2">
           <button onClick={load} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition-colors">
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
+          </button>
+          <button onClick={createDemoPaste}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-600/50 text-purple-400 transition-colors">
+            <Zap className="w-4 h-4" /> Demo Paste
           </button>
           <button onClick={() => setShowAdd(true)}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
