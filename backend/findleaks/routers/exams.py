@@ -375,35 +375,10 @@ async def scan_image(
         )
     )
     dup = dup_result.scalar_one_or_none()
-    # Only use the cached result if it was an actual detection.
-    # A cached clean/0% result (from broken OCR) must not block a fresh scan.
-    if dup and dup.confidence_label in ("high", "review"):
-        # Rebuild matched_excerpts from the stored JSON so the forensic panel renders.
-        dup_excerpts = []
-        for ex in (dup.matched_excerpts or []):
-            try:
-                dup_excerpts.append(MatchedExcerpt(
-                    question_id=ex["question_id"],
-                    text=ex.get("text", ""),
-                    score=round(float(ex.get("score", 0)), 4),
-                ))
-            except Exception:
-                pass
-        return ScanResponse(
-            status="duplicate",
-            leak_detected=dup.confidence_label in ("high", "review"),
-            exam=exam.name,
-            exam_id=exam_id,
-            confidence=dup.confidence,
-            confidence_label=dup.confidence_label,
-            matched_questions=len(dup.matched_question_ids or []),
-            matched_excerpts=dup_excerpts,
-            ocr_text=dup.ocr_text or "",
-            leak_id=dup.id,
-            alert_sent=dup.alert_sent,
-            alert_recipients=[],
-            timestamp=dup.timestamp,
-        )
+    # For manual scans: always run fresh detection so the forensic panel reflects
+    # the latest detection logic (Jaccard re-ranking, thresholds, etc.).
+    # The dup record is only used to suppress duplicate alerts.
+    is_dup = dup and dup.confidence_label in ("high", "review")
 
     q_result = await db.execute(
         select(Question.question_text).where(Question.exam_id == exam_id)
@@ -411,6 +386,32 @@ async def scan_image(
     question_texts = list(q_result.scalars().all())
 
     detection = detect(content, exam.slug, question_texts=question_texts)
+
+    # If it's a dup, return the fresh detection result marked as duplicate
+    # (alert will not be sent again) but with full forensic data.
+    if is_dup:
+        return ScanResponse(
+            status="duplicate",
+            leak_detected=detection.confidence_label in ("high", "review"),
+            exam=exam.name,
+            exam_id=exam_id,
+            confidence=detection.confidence,
+            confidence_label=detection.confidence_label,
+            matched_questions=len(detection.matched_questions),
+            matched_excerpts=[
+                MatchedExcerpt(
+                    question_id=m.question_id,
+                    text=m.text,
+                    score=round(m.score, 4),
+                )
+                for m in detection.matched_questions
+            ],
+            ocr_text=detection.ocr_text,
+            leak_id=dup.id,
+            alert_sent=dup.alert_sent,
+            alert_recipients=[],
+            timestamp=dup.timestamp,
+        )
 
     leak_id = None
     alert_sent = False

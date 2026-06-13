@@ -78,20 +78,45 @@ def ocr_image(image_bytes: bytes) -> str:
         import cv2
         import pytesseract
 
-        processed = preprocess_image(image_bytes)
-        text = pytesseract.image_to_string(
-            processed, config="--oem 3 --psm 6"
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return ""
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Upscale if small — helps with subscripts and special chars
+        h, w = gray.shape
+        if w < 1200:
+            scale = 1200.0 / w
+            gray = cv2.resize(gray, None, fx=scale, fy=scale,
+                              interpolation=cv2.INTER_CUBIC)
+
+        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+
+        # Attempt 1: adaptive threshold (handles uneven lighting well)
+        thresh_adaptive = cv2.adaptiveThreshold(
+            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY, 11, 2
+        )
+        text1 = pytesseract.image_to_string(
+            thresh_adaptive, config="--oem 3 --psm 6"
         ).strip()
 
-        # Fallback: if preprocessing produced no text, try raw grayscale
+        # Attempt 2: OTSU global threshold (better for uniform lighting / printed docs)
+        _, thresh_otsu = cv2.threshold(blurred, 0, 255,
+                                        cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        text2 = pytesseract.image_to_string(
+            thresh_otsu, config="--oem 3 --psm 6"
+        ).strip()
+
+        # Use whichever produced more text (more chars = fewer blanked regions)
+        text = text1 if len(text1) >= len(text2) else text2
+
+        # Last-resort fallback: raw grayscale
         if not text:
-            arr = np.frombuffer(image_bytes, dtype=np.uint8)
-            import cv2 as _cv2
-            raw = _cv2.imdecode(arr, _cv2.IMREAD_GRAYSCALE)
-            if raw is not None:
-                text = pytesseract.image_to_string(
-                    raw, config="--oem 3 --psm 6"
-                ).strip()
+            text = pytesseract.image_to_string(
+                gray, config="--oem 3 --psm 6"
+            ).strip()
 
         return text
     except Exception as exc:
