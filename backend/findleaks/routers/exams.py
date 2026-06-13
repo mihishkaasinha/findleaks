@@ -378,6 +378,17 @@ async def scan_image(
     # Only use the cached result if it was an actual detection.
     # A cached clean/0% result (from broken OCR) must not block a fresh scan.
     if dup and dup.confidence_label in ("high", "review"):
+        # Rebuild matched_excerpts from the stored JSON so the forensic panel renders.
+        dup_excerpts = []
+        for ex in (dup.matched_excerpts or []):
+            try:
+                dup_excerpts.append(MatchedExcerpt(
+                    question_id=ex["question_id"],
+                    text=ex.get("text", ""),
+                    score=round(float(ex.get("score", 0)), 4),
+                ))
+            except Exception:
+                pass
         return ScanResponse(
             status="duplicate",
             leak_detected=dup.confidence_label in ("high", "review"),
@@ -386,7 +397,8 @@ async def scan_image(
             confidence=dup.confidence,
             confidence_label=dup.confidence_label,
             matched_questions=len(dup.matched_question_ids or []),
-            matched_excerpts=[],
+            matched_excerpts=dup_excerpts,
+            ocr_text=dup.ocr_text or "",
             leak_id=dup.id,
             alert_sent=dup.alert_sent,
             alert_recipients=[],
