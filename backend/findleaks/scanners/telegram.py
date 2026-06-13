@@ -65,7 +65,7 @@ class TelegramScanner(BaseScanner):
                 await self.scan_post(text, post_id)
 
     async def scan_post(self, post_text: str, post_id: str) -> Optional[dict]:
-        if not any(kw.lower() in post_text.lower() for kw in self.keywords):
+        if self.keywords and not any(kw.lower() in post_text.lower() for kw in self.keywords):
             return None
 
         matches = search_faiss(post_text, self.exam_slug)
