@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react'
-import { AlertTriangle, Bell, CheckCircle2, Clock, RefreshCw, Shield, TrendingUp } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCircle2, Clock, Loader2, RefreshCw, Shield, TrendingUp } from 'lucide-react'
 import { api } from '../api'
 import LeakDetailModal from '../components/LeakDetailModal'
 import { useNotifications } from '../hooks/useNotifications'
@@ -74,6 +74,22 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [selectedLeak, setSelectedLeak] = useState(null)
   const [toast, setToast] = useState(null)
+  const [reindexing, setReindexing] = useState(false)
+  const [reindexMsg, setReindexMsg] = useState('')
+
+  const handleReindex = async () => {
+    setReindexing(true)
+    setReindexMsg('')
+    try {
+      await api.reindex()
+      setReindexMsg('Rebuilding… refresh in ~30s')
+      setTimeout(() => { load(); setReindexMsg('') }, 30_000)
+    } catch (err) {
+      setReindexMsg('Error: ' + (err.message || 'reindex failed'))
+    } finally {
+      setReindexing(false)
+    }
+  }
   const PAGE_SIZE = 10
 
   const notifConnected = useNotifications((event) => {
@@ -144,10 +160,36 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Active Leaks" value={health?.active_leaks} icon={AlertTriangle} color="text-red-400" />
         <StatCard label="Exams Monitored" value={health?.exams_monitored} icon={Shield} color="text-indigo-400" />
-        <StatCard label="Indexes Loaded" value={health?.indexes_loaded} icon={TrendingUp} color="text-green-400" />
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-center gap-4">
+          <div className={`p-2 rounded-lg bg-gray-800 ${(health?.indexes_loaded ?? 0) > 0 ? 'text-green-400' : 'text-yellow-400'}`}>
+            <TrendingUp className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-2xl font-bold text-white">{health?.indexes_loaded ?? '—'}</p>
+            <p className="text-xs text-gray-500">Indexes Loaded</p>
+            {health && !health.model_loaded && (
+              <p className="text-[10px] text-yellow-500 flex items-center gap-1 mt-0.5">
+                <Loader2 className="w-2.5 h-2.5 animate-spin" /> Model warming up…
+              </p>
+            )}
+          </div>
+          {health?.model_loaded && (health?.indexes_loaded ?? 0) === 0 && (
+            <button onClick={handleReindex} disabled={reindexing}
+              className="shrink-0 text-xs px-2 py-1 rounded-lg bg-yellow-900/40 hover:bg-yellow-800/60 border border-yellow-700/60 text-yellow-400 disabled:opacity-50 transition-colors flex items-center gap-1">
+              {reindexing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+              Rebuild
+            </button>
+          )}
+        </div>
         <StatCard label="DB Status" value={health?.db_status} icon={CheckCircle2}
           color={health?.db_status === 'connected' ? 'text-green-400' : 'text-red-400'} />
       </div>
+
+      {reindexMsg && (
+        <div className="text-xs px-4 py-2 rounded-lg border bg-yellow-900/20 border-yellow-700/50 text-yellow-400">
+          {reindexMsg}
+        </div>
+      )}
 
       <div className="space-y-3">
         <div className="flex items-center gap-2 flex-wrap">

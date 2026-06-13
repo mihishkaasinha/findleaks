@@ -92,6 +92,7 @@ export const api = {
   injectPost:  (id, content = null) => request('POST', `/scanners/${id}/inject-post`,  content ? { content } : {}),
 
   health: () => request('GET', '/health'),
+  reindex: () => request('POST', '/health/reindex'),
 
   notificationsUrl: () => `${BASE}/auth/notifications`,
 }

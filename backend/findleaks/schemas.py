@@ -285,3 +285,4 @@ class HealthResponse(AppBrandedModel):
     active_leaks: int
     db_status: str
     indexes_loaded: int
+    model_loaded: bool = False
