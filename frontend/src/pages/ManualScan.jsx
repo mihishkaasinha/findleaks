@@ -86,65 +86,82 @@ export default function ManualScan() {
   const reset = () => { setFile(null); setPreview(null); setResult(null); setError('') }
 
   const loadDemoImage = async () => {
+    if (!examId) { setError('Select an exam first'); return }
+    setError('')
     try {
+      // Fetch a real question from the bank so the demo guarantees a match
+      const data = await api.getQuestions(Number(examId), { limit: 5 })
+      const questions = Array.isArray(data) ? data : data?.items || data?.questions || []
+      const q = questions.find(q => q.text?.trim().length > 20) || questions[0]
+      const questionText = q?.text?.trim() || 'What is the velocity of a particle moving in a straight line?'
+
+      // Wrap text to ~60 chars per line for canvas rendering
+      const wrapText = (text, maxLen = 60) => {
+        const words = text.split(' ')
+        const lines = []
+        let current = ''
+        for (const word of words) {
+          if ((current + ' ' + word).trim().length <= maxLen) {
+            current = (current + ' ' + word).trim()
+          } else {
+            if (current) lines.push(current)
+            current = word
+          }
+        }
+        if (current) lines.push(current)
+        return lines
+      }
+
+      const wrappedLines = wrapText(questionText)
+      const canvasHeight = Math.max(300, 160 + wrappedLines.length * 28)
+
       const canvas = document.createElement('canvas')
       canvas.width = 700
-      canvas.height = 400
+      canvas.height = canvasHeight
       const ctx = canvas.getContext('2d')
 
-      // White background — OCR works best on light background
+      // White background — best for OCR
       ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, 700, 400)
+      ctx.fillRect(0, 0, 700, canvasHeight)
 
       // Border
       ctx.strokeStyle = '#cccccc'
       ctx.lineWidth = 2
-      ctx.strokeRect(20, 20, 660, 360)
+      ctx.strokeRect(20, 20, 660, canvasHeight - 40)
 
       // Header
       ctx.fillStyle = '#111111'
       ctx.font = 'bold 18px Georgia'
-      ctx.fillText('JEE Main 2025 — Physics', 30, 55)
+      ctx.fillText('Confidential Exam Paper — Leaked Copy', 30, 55)
 
-      ctx.fillStyle = '#444444'
-      ctx.font = '13px Georgia'
-      ctx.fillText('Section A | Time: 3 Hours | Maximum Marks: 300', 30, 78)
+      ctx.fillStyle = '#888888'
+      ctx.font = '12px Arial'
+      ctx.fillText('Source: Telegram channel @examdrops2025  |  DO NOT SHARE', 30, 75)
 
       // Divider
       ctx.strokeStyle = '#aaaaaa'
-      ctx.beginPath()
-      ctx.moveTo(30, 90)
-      ctx.lineTo(670, 90)
-      ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(30, 85); ctx.lineTo(670, 85); ctx.stroke()
 
-      // Question lines — plain English, no special symbols for clean OCR
+      // Question text from actual bank
       ctx.fillStyle = '#111111'
-      ctx.font = '17px Georgia'
-      const lines = [
-        'Q1. The velocity of a particle moving on a straight line',
-        '    varies with time as v = at + b where a and b are',
-        '    constants. Find the displacement of the particle',
-        '    after time t = 2 seconds.',
-        '',
-        '    (A)  2a + b          (B)  2a + 2b',
-        '    (C)  a + 2b          (D)  a + b',
-      ]
-      lines.forEach((line, i) => {
-        ctx.fillText(line, 30, 125 + i * 30)
+      ctx.font = '16px Georgia'
+      ctx.fillText('Q1.', 30, 115)
+      wrappedLines.forEach((line, i) => {
+        ctx.fillText(line, 55, 115 + i * 28)
       })
 
-      // Watermark-like footer
+      // Footer watermark
       ctx.fillStyle = '#cccccc'
       ctx.font = '11px Arial'
-      ctx.fillText('Strictly Confidential — For Examiner Use Only', 30, 368)
+      ctx.fillText('Strictly Confidential — For Examiner Use Only', 30, canvasHeight - 25)
 
       canvas.toBlob(blob => {
         const file = new File([blob], 'demo-leak.jpg', { type: 'image/jpeg' })
         handleFile(file)
       }, 'image/jpeg', 0.95)
     } catch (err) {
-      console.error('Failed to create demo image:', err)
-      setError('Demo mode failed')
+      console.error('Demo image error:', err)
+      setError('Demo mode failed — make sure an exam with questions is selected')
     }
   }
 
