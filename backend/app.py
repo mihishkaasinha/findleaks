@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _load_sentence_model)
         await _rebuild_missing_indexes(settings.FAISS_INDEX_DIR)
+        await _load_question_banks()
         logger.info("startup_complete", app=settings.APP_NAME)
 
     asyncio.create_task(_warm_up())
@@ -70,6 +71,36 @@ def _load_faiss_indexes(index_dir: str) -> None:
                 logger.warning("faiss_index_load_failed", slug=slug, error=str(exc))
     except ImportError:
         logger.warning("faiss_not_available")
+
+
+async def _load_question_banks() -> None:
+    """
+    Populate state.question_bank for every FAISS index that was loaded from
+    disk at startup (not rebuilt — those are handled by build_index_for_exam).
+    """
+    from findleaks import state
+    from findleaks.database import AsyncSessionLocal
+    from findleaks.models import Exam, Question
+    from sqlalchemy import select
+
+    slugs_missing = [s for s in state.faiss_indexes if s not in state.question_bank]
+    if not slugs_missing:
+        return
+    try:
+        async with AsyncSessionLocal() as session:
+            exams = (await session.execute(
+                select(Exam).where(Exam.slug.in_(slugs_missing))
+            )).scalars().all()
+            for exam in exams:
+                rows = (await session.execute(
+                    select(Question.question_text)
+                    .where(Question.exam_id == exam.id)
+                    .order_by(Question.id)
+                )).scalars().all()
+                state.question_bank[exam.slug] = list(rows)
+                logger.info("question_bank_loaded", slug=exam.slug, questions=len(rows))
+    except Exception as exc:
+        logger.error("load_question_banks_failed", error=str(exc))
 
 
 def _load_sentence_model() -> None:

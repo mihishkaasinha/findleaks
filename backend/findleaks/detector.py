@@ -124,6 +124,46 @@ def ocr_image(image_bytes: bytes) -> str:
         return ""
 
 
+def _jaccard(text_a: str, text_b: str) -> float:
+    """Word-level Jaccard similarity between two pre-cleaned texts."""
+    a = set(text_a.split())
+    b = set(text_b.split())
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def _char_ngram_jaccard(text_a: str, text_b: str, n: int = 3) -> float:
+    """
+    Character n-gram Jaccard similarity.
+    Robust to OCR noise: 'chatecd' and 'charged' share 'cha','ate','ted','ged'
+    even though the words differ. Spaces stripped before n-gram extraction.
+    """
+    a = text_a.replace(" ", "")
+    b = text_b.replace(" ", "")
+    if len(a) < n or len(b) < n:
+        return 0.0
+    a_grams = set(a[i:i + n] for i in range(len(a) - n + 1))
+    b_grams = set(b[i:i + n] for i in range(len(b) - n + 1))
+    union = len(a_grams | b_grams)
+    return len(a_grams & b_grams) / union if union else 0.0
+
+
+def _overlap_adjusted_score(faiss_score: float, wj: float, cj: float) -> float:
+    """
+    Multiplicative overlap gate: penalises matches with low word/char overlap.
+
+    Formula: score * (0.30 + 0.70 * min(1, wj*6 + cj*2))
+
+    Calibration:
+      wj=0.00, cj=0.08 (exam header vs question) → gate=0.46 → 0.76*0.46=0.35  CLEAN
+      wj=0.05, cj=0.25 (noisy OCR true positive)  → gate=0.80 → 0.76*0.80=0.61  REVIEW
+      wj=0.20, cj=0.40 (clean scan true positive)  → gate=1.00 → 0.76*1.00=0.76  HIGH
+    """
+    gate = min(1.0, wj * 6 + cj * 2)
+    return round(faiss_score * (0.30 + 0.70 * gate), 4)
+
+
 def search_faiss(
     query_text: str,
     exam_slug: str,
@@ -196,29 +236,39 @@ def compute_confidence(raw_scores: list[float]) -> float:
     return round(confidence, 4)
 
 
-def _jaccard(text_a: str, text_b: str) -> float:
-    """Word-level Jaccard similarity between two pre-cleaned texts."""
-    a = set(text_a.split())
-    b = set(text_b.split())
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
-
-
-def _char_ngram_jaccard(text_a: str, text_b: str, n: int = 3) -> float:
+def search_faiss_ranked(
+    query_text: str,
+    exam_slug: str,
+    top_k: int = 5,
+) -> list[tuple[int, float]]:
     """
-    Character n-gram Jaccard similarity.
-    Robust to OCR noise: 'chatecd' and 'charged' share 'cha','ate','ted','ged'
-    even though the words differ. Spaces stripped before n-gram extraction.
+    Like search_faiss but applies Jaccard overlap penalty using state.question_bank.
+    Use this in scanner scan_post methods to filter false positives where FAISS
+    semantic similarity is high but actual word overlap is very low (e.g. exam
+    instruction/header text matching question embeddings due to shared domain vocab).
+    Falls back to raw FAISS scores if question_bank is not yet populated.
     """
-    a = text_a.replace(" ", "")
-    b = text_b.replace(" ", "")
-    if len(a) < n or len(b) < n:
-        return 0.0
-    a_grams = set(a[i:i + n] for i in range(len(a) - n + 1))
-    b_grams = set(b[i:i + n] for i in range(len(b) - n + 1))
-    union = len(a_grams | b_grams)
-    return len(a_grams & b_grams) / union if union else 0.0
+    from findleaks.state import question_bank
+
+    matches = search_faiss(query_text, exam_slug, top_k=top_k)
+    if not matches:
+        return []
+
+    q_bank = question_bank.get(exam_slug)
+    if not q_bank:
+        return matches
+
+    query_clean = clean_text(query_text)
+    rescored: list[tuple[int, float]] = []
+    for idx, faiss_score in matches:
+        q_text = q_bank[idx] if idx < len(q_bank) else ""
+        q_clean = clean_text(q_text)
+        wj = _jaccard(query_clean, q_clean)
+        cj = _char_ngram_jaccard(query_clean, q_clean, n=3)
+        adjusted = _overlap_adjusted_score(faiss_score, wj, cj)
+        rescored.append((idx, adjusted))
+
+    return sorted(rescored, key=lambda x: x[1], reverse=True)
 
 
 def confidence_label(confidence: float) -> str:
@@ -250,30 +300,29 @@ def detect(
 
     matches = search_faiss(ocr_text, exam_slug, top_k=top_k)
 
-    # Re-rank by combined score: FAISS cosine + word Jaccard + char-trigram Jaccard.
-    # char-trigram is robust to OCR noise: 'chatecd'/'charged' still share 'cha','ted'.
-    # Combined score used for BOTH ranking and display; raw FAISS used for confidence.
+    # Re-rank: FAISS cosine score gated by multiplicative word/char overlap penalty.
+    # Low word overlap (e.g. exam instruction header vs question) → score penalised.
+    # char-trigram overlap is robust to OCR noise so noisy-but-genuine leaks survive.
     ocr_clean = clean_text(ocr_text)
     if question_texts:
-        scored = []
+        scored: list[tuple[int, float, float]] = []
         for idx, faiss_score in matches:
             q_text = question_texts[idx] if idx < len(question_texts) else ""
             q_clean = clean_text(q_text)
             wj = _jaccard(ocr_clean, q_clean)
             cj = _char_ngram_jaccard(ocr_clean, q_clean, n=3)
-            combined = faiss_score * (1.0 + 0.40 * wj + 0.30 * cj)
-            scored.append((idx, faiss_score, min(combined, 1.0)))
+            adjusted = _overlap_adjusted_score(faiss_score, wj, cj)
+            scored.append((idx, faiss_score, adjusted))
         scored.sort(key=lambda x: x[2], reverse=True)
-        # Use combined scores for confidence — consistent with displayed match %
         raw_scores = [s[2] for s in scored]
         confidence = compute_confidence(raw_scores)
         label = confidence_label(confidence)
 
         matched_questions = []
-        for idx, faiss_score, combined in scored:
+        for idx, faiss_score, adjusted in scored:
             q_text = question_texts[idx] if idx < len(question_texts) else ""
             matched_questions.append(MatchedQuestion(
-                question_id=idx, text=q_text, score=round(combined, 4)
+                question_id=idx, text=q_text, score=adjusted
             ))
     else:
         raw_scores = [score for _, score in matches]

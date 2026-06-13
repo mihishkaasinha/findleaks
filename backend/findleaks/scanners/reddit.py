@@ -13,7 +13,7 @@ import httpx
 import structlog
 
 from findleaks.config import get_settings
-from findleaks.detector import compute_confidence, confidence_label, search_faiss
+from findleaks.detector import compute_confidence, confidence_label, search_faiss_ranked
 from findleaks.ingestion import clean_text
 from findleaks.scanners.base import BaseScanner
 
@@ -110,7 +110,7 @@ class RedditScanner(BaseScanner):
 
     async def scan_post(self, post_text: str, post_id: str) -> Optional[dict]:
         text = clean_text(post_text)
-        matches = search_faiss(text, self.exam_slug)
+        matches = search_faiss_ranked(text, self.exam_slug)
         if not matches:
             return None
 

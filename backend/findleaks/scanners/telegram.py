@@ -11,7 +11,7 @@ from typing import Optional
 import structlog
 
 from findleaks.config import get_settings
-from findleaks.detector import compute_confidence, confidence_label, search_faiss
+from findleaks.detector import compute_confidence, confidence_label, search_faiss_ranked
 from findleaks.scanners.base import BaseScanner
 
 logger = structlog.get_logger()
@@ -68,7 +68,7 @@ class TelegramScanner(BaseScanner):
         if self.keywords and not any(kw.lower() in post_text.lower() for kw in self.keywords):
             return None
 
-        matches = search_faiss(post_text, self.exam_slug)
+        matches = search_faiss_ranked(post_text, self.exam_slug)
         if not matches:
             return None
 

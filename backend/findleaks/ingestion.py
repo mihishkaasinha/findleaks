@@ -329,6 +329,12 @@ def build_index_for_exam(
 
     path = save_faiss_index(index, exam_slug, index_dir)
 
+    # Keep question_bank in sync — append the newly indexed questions so
+    # search_faiss_ranked can apply Jaccard re-ranking at scan time.
+    from findleaks import state as _state
+    existing = _state.question_bank.get(exam_slug, [])
+    _state.question_bank[exam_slug] = existing + questions
+
     if progress:
         progress.emit("progress", percent=100, message="Index ready")
         progress.emit("complete", question_count=len(non_empty))

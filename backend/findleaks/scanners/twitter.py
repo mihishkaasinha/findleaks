@@ -12,7 +12,7 @@ from typing import Optional
 import structlog
 
 from findleaks.config import get_settings
-from findleaks.detector import search_faiss, compute_confidence, confidence_label
+from findleaks.detector import search_faiss_ranked, compute_confidence, confidence_label
 from findleaks.ingestion import clean_text
 from findleaks.scanners.base import BaseScanner
 
@@ -97,7 +97,7 @@ class TwitterScanner(BaseScanner):
             await self.scan_post(tweet.text, tweet_id)
 
     async def scan_post(self, post_text: str, post_id: str) -> Optional[dict]:
-        matches = search_faiss(post_text, self.exam_slug)
+        matches = search_faiss_ranked(post_text, self.exam_slug)
         if not matches:
             return None
 
