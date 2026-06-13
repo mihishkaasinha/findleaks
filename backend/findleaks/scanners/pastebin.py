@@ -54,12 +54,25 @@ class PastebinScanner(BaseScanner):
         settings = get_settings()
         paste_keys: list[str] = []
 
-        async with httpx.AsyncClient(timeout=30) as client:
+        async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
             if settings.PASTEBIN_API_KEY:
-                paste_keys = await self._fetch_via_api(client, settings.PASTEBIN_API_KEY)
+                try:
+                    paste_keys = await self._fetch_via_api(client, settings.PASTEBIN_API_KEY)
+                except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code in (401, 403):
+                        # API key invalid or not Pro — fall back to public archive
+                        logger.warning(
+                            "pastebin_api_forbidden_fallback_to_archive",
+                            exam=self.exam_slug,
+                            status=exc.response.status_code,
+                        )
+                        paste_keys = await self._fetch_via_archive(client)
+                    else:
+                        raise
             else:
                 paste_keys = await self._fetch_via_archive(client)
 
+            logger.info("pastebin_poll_keys", exam=self.exam_slug, count=len(paste_keys))
             for key in paste_keys[:MAX_PASTES]:
                 if key in self._seen_keys:
                     continue
@@ -68,7 +81,11 @@ class PastebinScanner(BaseScanner):
                     self._seen_keys = set(list(self._seen_keys)[-5_000:])
 
                 try:
-                    raw_resp = await client.get(RAW_URL.format(key=key), timeout=10)
+                    raw_resp = await client.get(
+                        RAW_URL.format(key=key),
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                        timeout=10,
+                    )
                     if raw_resp.status_code == 200:
                         content = raw_resp.text
                         if self._is_relevant(content):
@@ -90,10 +107,16 @@ class PastebinScanner(BaseScanner):
     async def _fetch_via_archive(self, client: httpx.AsyncClient) -> list[str]:
         resp = await client.get(
             PUBLIC_ARCHIVE_URL,
-            headers={"User-Agent": "Mozilla/5.0 FindLeaks/1.0"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+            },
         )
         resp.raise_for_status()
-        return PASTE_ID_RE.findall(resp.text)[:MAX_PASTES]
+        keys = PASTE_ID_RE.findall(resp.text)[:MAX_PASTES]
+        logger.info("pastebin_archive_fetched", exam=self.exam_slug, keys_found=len(keys))
+        return keys
 
     def _is_relevant(self, content: str) -> bool:
         """Quick keyword pre-filter before expensive FAISS search."""
