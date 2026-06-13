@@ -171,6 +171,15 @@ def compute_confidence(raw_scores: list[float]) -> float:
     return round(confidence, 4)
 
 
+def _jaccard(text_a: str, text_b: str) -> float:
+    """Word-level Jaccard similarity between two pre-cleaned texts."""
+    a = set(text_a.split())
+    b = set(text_b.split())
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
 def confidence_label(confidence: float) -> str:
     settings = get_settings()
     if confidence >= settings.ALERT_THRESHOLD_HIGH:
@@ -200,8 +209,21 @@ def detect(
 
     matches = search_faiss(ocr_text, exam_slug, top_k=top_k)
 
-    # Always keep the top matches for forensic display.
-    # Scoring/labelling thresholds are applied via confidence_label(), not by filtering here.
+    # Re-rank by combined score: FAISS cosine + Jaccard word-overlap.
+    # This corrects cases where an unrelated question ties with the real match.
+    # Original FAISS scores are still used for confidence computation.
+    ocr_clean = clean_text(ocr_text)
+    if question_texts:
+        scored = []
+        for idx, faiss_score in matches:
+            q_text = question_texts[idx] if idx < len(question_texts) else ""
+            q_clean = clean_text(q_text)
+            jaccard = _jaccard(ocr_clean, q_clean)
+            combined = faiss_score * (1.0 + 0.35 * jaccard)
+            scored.append((idx, faiss_score, combined))
+        scored.sort(key=lambda x: x[2], reverse=True)
+        matches = [(idx, faiss_score) for idx, faiss_score, _ in scored]
+
     raw_scores = [score for _, score in matches]
     confidence = compute_confidence(raw_scores)
     label = confidence_label(confidence)
