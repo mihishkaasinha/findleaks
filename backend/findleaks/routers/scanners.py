@@ -177,6 +177,53 @@ async def patch_scanner(
     )
 
 
+import random as _random
+
+_NOISE_TEMPLATES = [
+    ("WhatsApp leak",       "seen this in a study group just now: {q} — anyone recognise this paper??"),
+    ("Telegram forward",    "forwarded from premium channel 🔥📚 {q} 🔥 DM for full set"),
+    ("Discord post",        "bro look what someone dropped in the server lmaooo {q} idk which paper tho"),
+    ("Reddit thread",       "Guys my friend shared this snippet: {q}\nDoes anyone know the source exam?"),
+    ("Paste dump header",   "===EXAM LEAK=== date:{ts}\n{q}\n===END==="),
+]
+
+
+def _demo_variant(question_text: str) -> tuple[str, str]:
+    """Return (variant_label, transformed_content) for demo injection.
+
+    Variants are cycled deterministically within a second so consecutive
+    rapid clicks still vary, while repeated calls spread across confidence tiers.
+    """
+    import datetime, textwrap
+    words = question_text.split()
+    n = len(words)
+
+    bucket = _random.randint(0, 4)
+
+    if bucket == 0 or n < 8:
+        return "verbatim", question_text
+
+    if bucket == 1:
+        chunk = " ".join(words[:max(6, int(n * 0.6))])
+        return "truncated_60pct", chunk
+
+    if bucket == 2:
+        tmpl_label, tmpl = _NOISE_TEMPLATES[_random.randint(0, len(_NOISE_TEMPLATES) - 1)]
+        ts = datetime.datetime.utcnow().strftime("%Y-%m-%d")
+        noisy = tmpl.format(q=question_text[:300], ts=ts)
+        return f"forum_noise({tmpl_label})", noisy
+
+    if bucket == 3:
+        sparse = " ".join(words[i] for i in range(0, n, 2))
+        return "every_other_word", sparse
+
+    # bucket == 4 — first sentence / first 10 words
+    first_sent = question_text.split(".")[0].split("?")[0]
+    if len(first_sent.split()) < 5:
+        first_sent = " ".join(words[:10])
+    return "first_sentence", first_sent
+
+
 @router.post("/{scanner_id}/inject-paste")
 async def inject_paste(
     scanner_id: int,
@@ -206,6 +253,7 @@ async def inject_paste(
     if not exam:
         raise HTTPException(status_code=404, detail={"error": "exam_not_found"})
 
+    variant_label = "custom"
     if not content:
         q_row = (await db.execute(
             select(Question.question_text)
@@ -214,7 +262,7 @@ async def inject_paste(
         )).scalar_one_or_none()
         if not q_row:
             raise HTTPException(status_code=422, detail={"error": "no_questions_in_bank"})
-        content = q_row
+        variant_label, content = _demo_variant(q_row)
 
     scanner = PastebinScanner(
         exam_id=row.exam_id, exam_slug=exam.slug, keywords=[]
@@ -222,9 +270,10 @@ async def inject_paste(
     post_id = f"demo:{datetime.datetime.utcnow().timestamp()}"
     result = await scanner.scan_post(content, post_id)
 
-    logger.info("inject_paste_complete", scanner_id=scanner_id, matched=result is not None)
+    logger.info("inject_paste_complete", scanner_id=scanner_id, variant=variant_label, matched=result is not None)
     return {
         "injected": True,
+        "variant": variant_label,
         "post_id": post_id,
         "content_preview": content[:120],
         "leak_detected": result is not None,
@@ -265,6 +314,7 @@ async def inject_post(
     if not exam:
         raise HTTPException(status_code=404, detail={"error": "exam_not_found"})
 
+    variant_label = "custom"
     if not content:
         q_row = (await db.execute(
             select(Question.question_text)
@@ -273,7 +323,7 @@ async def inject_post(
         )).scalar_one_or_none()
         if not q_row:
             raise HTTPException(status_code=422, detail={"error": "no_questions_in_bank"})
-        content = q_row
+        variant_label, content = _demo_variant(q_row)
 
     platform = row.platform
     if platform not in SCANNER_MAP:
@@ -288,10 +338,11 @@ async def inject_post(
     post_id = f"demo:{datetime.datetime.utcnow().timestamp()}"
     result = await scanner.scan_post(content, post_id)
 
-    logger.info("inject_post_complete", scanner_id=scanner_id, platform=platform, matched=result is not None)
+    logger.info("inject_post_complete", scanner_id=scanner_id, platform=platform, variant=variant_label, matched=result is not None)
     return {
         "injected": True,
         "platform": platform,
+        "variant": variant_label,
         "post_id": post_id,
         "content_preview": content[:120],
         "leak_detected": result is not None,

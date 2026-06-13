@@ -113,9 +113,10 @@ export default function Scanners() {
     try {
       const res = await api.injectPaste(pbScanner.id)
       if (res.leak_detected) {
-        setDemoMsg('✓ Leak injected and detected! Check the Leaks page.')
+        const conf = res.result?.confidence ? ` (${(res.result.confidence * 100).toFixed(0)}%)` : ''
+        setDemoMsg(`✓ Paste demo injected [${res.variant || 'verbatim'}]${conf} — Check the Leaks page.`)
       } else {
-        setDemoMsg('Injected — no match found (check question bank has questions)')
+        setDemoMsg('Injected — no match (try a different variant or check question bank)')
       }
       load()
     } catch (err) {
@@ -134,9 +135,10 @@ export default function Scanners() {
     try {
       const res = await api.injectPost(scanner.id)
       if (res.leak_detected) {
-        setDemoMsg(`✓ Demo injected into ${scanner.platform}! Check the Leaks page.`)
+        const conf = res.result?.confidence ? ` (${(res.result.confidence * 100).toFixed(0)}%)` : ''
+        setDemoMsg(`✓ ${scanner.platform} demo [${res.variant || 'verbatim'}]${conf} — Check the Leaks page.`)
       } else {
-        setDemoMsg(`Injected into ${scanner.platform} — no match (check question bank)`)
+        setDemoMsg(`Injected into ${scanner.platform} — no match (try again for a different variant)`)
       }
       load()
     } catch (err) {
