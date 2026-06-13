@@ -134,10 +134,9 @@ def compute_confidence(raw_scores: list[float]) -> float:
     Confidence = top-1 cosine score + small multi-match boost.
 
     Calibration for all-MiniLM-L6-v2 after clean_text + OCR noise:
-      >= 0.65  → near-certain match (identical question, clean image)
-      0.45-0.65 → likely match (same question, OCR/encoding variation)
-      0.35-0.45 → possible match (related content, review needed)
-      <  0.35  → noise / unrelated
+      >= 0.82  → near-certain match (identical question, clean image)
+      0.72-0.82 → likely match (same question, OCR/encoding variation)
+      <  0.72  → noise / different topic (same domain still scores 0.50-0.72)
 
     The old weighted-average formula diluted the top score with irrelevant
     matches, causing true positives to fall below the review threshold.
@@ -145,7 +144,7 @@ def compute_confidence(raw_scores: list[float]) -> float:
     if not raw_scores:
         return 0.0
     top = raw_scores[0]
-    high_matches = sum(1 for s in raw_scores[1:] if s >= 0.38)
+    high_matches = sum(1 for s in raw_scores[1:] if s >= 0.72)
     boost = min(high_matches * 0.025, 0.08)
     confidence = min(top + boost, 1.0)
     return round(confidence, 4)
@@ -178,7 +177,14 @@ def detect(
             confidence_label="clean",
         )
 
+    settings = get_settings()
     matches = search_faiss(ocr_text, exam_slug, top_k=top_k)
+
+    # Filter out noise: FAISS always returns nearest neighbours even for unrelated text.
+    # Only keep matches whose cosine similarity is at or above the review threshold.
+    min_score = settings.ALERT_THRESHOLD_REVIEW  # 0.45 by default
+    matches = [(idx, score) for idx, score in matches if score >= min_score]
+
     raw_scores = [score for _, score in matches]
     confidence = compute_confidence(raw_scores)
     label = confidence_label(confidence)

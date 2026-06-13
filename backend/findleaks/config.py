@@ -59,8 +59,8 @@ class Settings(BaseSettings):
     APP_NAME: str = "FINDLEAKS"
     FAISS_INDEX_DIR: str = "./indexes"
     UPLOAD_DIR: str = "./uploads"
-    ALERT_THRESHOLD_HIGH: float = 0.65
-    ALERT_THRESHOLD_REVIEW: float = 0.45
+    ALERT_THRESHOLD_HIGH: float = 0.82
+    ALERT_THRESHOLD_REVIEW: float = 0.72
     SCAN_DEDUP_MINUTES: int = 30
     LOG_LEVEL: str = "INFO"
 
