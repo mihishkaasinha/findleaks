@@ -40,11 +40,10 @@ class DetectionResult:
 
 def preprocess_image(image_bytes: bytes) -> "np.ndarray":
     """
-    OpenCV pipeline optimised for phone-photo exam images:
+    OpenCV pipeline for phone-photo exam images:
     1. Decode + grayscale
-    2. Upscale to >=1500px width (Tesseract accuracy improves with higher DPI)
-    3. Denoise (fastNlMeans) + sharpen
-    4. OTSU global threshold (more stable than adaptive for printed text)
+    2. Upscale to >= 1200px wide (Tesseract needs high DPI for small text)
+    3. Adaptive threshold (robust to uneven lighting in photos)
     """
     import cv2
 
@@ -55,25 +54,19 @@ def preprocess_image(image_bytes: bytes) -> "np.ndarray":
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # Upscale small images — Tesseract needs ~300 DPI; target >= 1500px wide
+    # Upscale if image is small — target >= 1200px wide
     h, w = gray.shape
-    if w < 1500:
-        scale = max(1500 / w, 2.0)
+    if w < 1200:
+        scale = 1200.0 / w
         gray = cv2.resize(gray, None, fx=scale, fy=scale,
                           interpolation=cv2.INTER_CUBIC)
 
-    # Denoise without blurring fine strokes (subscripts, μF symbols)
-    gray = cv2.fastNlMeansDenoising(gray, None, h=15,
-                                     templateWindowSize=7, searchWindowSize=21)
-
-    # Sharpen to recover edge detail lost in upscale
-    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
-    gray = cv2.filter2D(gray, -1, kernel)
-    gray = np.clip(gray, 0, 255).astype(np.uint8)
-
-    # OTSU global threshold — better than adaptive for printed exam paper
-    _, thresh = cv2.threshold(gray, 0, 255,
-                               cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # Mild blur to reduce grain, then adaptive threshold for uneven lighting
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    thresh = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, 31, 10
+    )
     return thresh
 
 
@@ -87,12 +80,22 @@ def ocr_image(image_bytes: bytes) -> str:
         import pytesseract
 
         processed = preprocess_image(image_bytes)
-        # PSM 4 = single column of text of variable sizes — best for exam papers
+        # PSM 4 = single column of variable-size text — best for exam papers
         text = pytesseract.image_to_string(
-            processed,
-            config="--oem 3 --psm 4 --dpi 300 -c preserve_interword_spaces=1"
-        )
-        return text.strip()
+            processed, config="--oem 3 --psm 4"
+        ).strip()
+
+        # Fallback: if preprocessing produced no text, try raw grayscale
+        if not text:
+            arr = np.frombuffer(image_bytes, dtype=np.uint8)
+            import cv2 as _cv2
+            raw = _cv2.imdecode(arr, _cv2.IMREAD_GRAYSCALE)
+            if raw is not None:
+                text = pytesseract.image_to_string(
+                    raw, config="--oem 3 --psm 6"
+                ).strip()
+
+        return text
     except Exception as exc:
         logger.warning("ocr_failed", error=str(exc))
         return ""
