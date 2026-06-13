@@ -90,10 +90,12 @@ export default function ManualScan() {
     setError('')
     try {
       // Fetch a real question from the bank so the demo guarantees a match
-      const data = await api.getQuestions(Number(examId), { limit: 5 })
-      const questions = Array.isArray(data) ? data : data?.items || data?.questions || []
-      const q = questions.find(q => q.text?.trim().length > 20) || questions[0]
-      const questionText = q?.text?.trim() || 'What is the velocity of a particle moving in a straight line?'
+      const data = await api.getQuestions(Number(examId), { page: 1, page_size: 10 })
+      const questions = Array.isArray(data) ? data : (data?.items || [])
+      // API returns question_text field
+      const q = questions.find(q => (q.question_text || q.text)?.trim().length > 20) || questions[0]
+      const questionText = (q?.question_text || q?.text)?.trim() || null
+      if (!questionText) { setError('No questions found in bank — upload questions first'); return }
 
       // Wrap text to ~60 chars per line for canvas rendering
       const wrapText = (text, maxLen = 60) => {
