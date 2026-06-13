@@ -88,6 +88,8 @@ export const api = {
   startScanner: (id) => request('POST', `/scanners/${id}/start`),
   stopScanner: (id) => request('POST', `/scanners/${id}/stop`),
   patchScanner: (id, body) => request('PATCH', `/scanners/${id}`, body),
+  injectPaste: (id, content = null) => request('POST', `/scanners/${id}/inject-paste`, content ? { content } : {}),
+  injectPost:  (id, content = null) => request('POST', `/scanners/${id}/inject-post`,  content ? { content } : {}),
 
   health: () => request('GET', '/health'),
 

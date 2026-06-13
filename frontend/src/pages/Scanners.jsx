@@ -111,14 +111,7 @@ export default function Scanners() {
     setDemoLoading(true)
     setDemoMsg('')
     try {
-      const token = localStorage.getItem('fl_token')
-      const resp = await fetch(`/api/scanners/${pbScanner.id}/inject-paste`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({}),
-      })
-      if (!resp.ok) throw new Error(await resp.text())
-      const res = await resp.json()
+      const res = await api.injectPaste(pbScanner.id)
       if (res.leak_detected) {
         setDemoMsg('✓ Leak injected and detected! Check the Leaks page.')
       } else {
@@ -129,6 +122,27 @@ export default function Scanners() {
       setDemoMsg('Error: ' + (err.message || 'inject failed'))
     } finally {
       setDemoLoading(false)
+      setTimeout(() => setDemoMsg(''), 5000)
+    }
+  }
+
+  const [injectId, setInjectId] = useState(null)
+
+  const injectDemo = async (scanner) => {
+    setInjectId(scanner.id)
+    setDemoMsg('')
+    try {
+      const res = await api.injectPost(scanner.id)
+      if (res.leak_detected) {
+        setDemoMsg(`✓ Demo injected into ${scanner.platform}! Check the Leaks page.`)
+      } else {
+        setDemoMsg(`Injected into ${scanner.platform} — no match (check question bank)`)
+      }
+      load()
+    } catch (err) {
+      setDemoMsg('Error: ' + (err.message || 'inject failed'))
+    } finally {
+      setInjectId(null)
       setTimeout(() => setDemoMsg(''), 5000)
     }
   }
@@ -205,20 +219,33 @@ export default function Scanners() {
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => toggle(sc)}
-                disabled={actionId === sc.id}
-                className={`shrink-0 flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 ${
-                  sc.running
-                    ? 'bg-red-900 hover:bg-red-800 text-red-300 border border-red-700'
-                    : 'bg-green-900 hover:bg-green-800 text-green-300 border border-green-700'
-                }`}
-              >
-                {actionId === sc.id
-                  ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  : sc.running ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
-                {sc.running ? 'Stop' : 'Start'}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {['reddit','discord','twitter','telegram'].includes(sc.platform) && (
+                  <button
+                    onClick={() => injectDemo(sc)}
+                    disabled={injectId === sc.id}
+                    className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 border border-purple-700/60 text-purple-400 disabled:opacity-50 transition-colors"
+                    title="Inject demo question bank text directly into this scanner"
+                  >
+                    {injectId === sc.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Zap className="w-3 h-3" />}
+                    Demo
+                  </button>
+                )}
+                <button
+                  onClick={() => toggle(sc)}
+                  disabled={actionId === sc.id}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 ${
+                    sc.running
+                      ? 'bg-red-900 hover:bg-red-800 text-red-300 border border-red-700'
+                      : 'bg-green-900 hover:bg-green-800 text-green-300 border border-green-700'
+                  }`}
+                >
+                  {actionId === sc.id
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : sc.running ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                  {sc.running ? 'Stop' : 'Start'}
+                </button>
+              </div>
             </div>
           ))}
         </div>

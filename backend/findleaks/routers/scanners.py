@@ -230,3 +230,70 @@ async def inject_paste(
         "leak_detected": result is not None,
         "result": result,
     }
+
+
+@router.post("/{scanner_id}/inject-post")
+async def inject_post(
+    scanner_id: int,
+    content: str = Body(None, embed=True),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Generic demo endpoint for Reddit/Discord/Twitter scanners.
+    Injects a question-bank snippet directly through scan_post().
+    """
+    from findleaks.models import Question
+    import datetime
+
+    SCANNER_MAP = {
+        "reddit": ("findleaks.scanners.reddit", "RedditScanner"),
+        "discord": ("findleaks.scanners.discord_scanner", "DiscordScanner"),
+        "twitter": ("findleaks.scanners.twitter", "TwitterScanner"),
+        "telegram": ("findleaks.scanners.telegram", "TelegramScanner"),
+    }
+
+    row = (await db.execute(
+        select(ScannerStatus).where(ScannerStatus.id == scanner_id)
+    )).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail={"error": "scanner_not_found"})
+
+    exam = (await db.execute(
+        select(Exam).where(Exam.id == row.exam_id)
+    )).scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail={"error": "exam_not_found"})
+
+    if not content:
+        q_row = (await db.execute(
+            select(Question.question_text)
+            .where(Question.exam_id == row.exam_id)
+            .limit(1)
+        )).scalar_one_or_none()
+        if not q_row:
+            raise HTTPException(status_code=422, detail={"error": "no_questions_in_bank"})
+        content = q_row
+
+    platform = row.platform
+    if platform not in SCANNER_MAP:
+        raise HTTPException(status_code=400, detail={"error": f"inject not supported for {platform}"})
+
+    import importlib
+    mod_path, cls_name = SCANNER_MAP[platform]
+    mod = importlib.import_module(mod_path)
+    ScannerCls = getattr(mod, cls_name)
+    scanner = ScannerCls(exam_id=row.exam_id, exam_slug=exam.slug, keywords=[])
+
+    post_id = f"demo:{datetime.datetime.utcnow().timestamp()}"
+    result = await scanner.scan_post(content, post_id)
+
+    logger.info("inject_post_complete", scanner_id=scanner_id, platform=platform, matched=result is not None)
+    return {
+        "injected": True,
+        "platform": platform,
+        "post_id": post_id,
+        "content_preview": content[:120],
+        "leak_detected": result is not None,
+        "result": result,
+    }
