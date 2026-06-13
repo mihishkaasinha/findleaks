@@ -133,7 +133,9 @@ export default function Scanners() {
     setInjectId(scanner.id)
     setDemoMsg('')
     try {
-      const res = await api.injectPost(scanner.id)
+      const res = scanner.platform === 'pastebin'
+        ? await api.injectPaste(scanner.id)
+        : await api.injectPost(scanner.id)
       if (res.leak_detected) {
         const conf = res.result?.confidence ? ` (${(res.result.confidence * 100).toFixed(0)}%)` : ''
         setDemoMsg(`✓ ${scanner.platform} demo [${res.variant || 'verbatim'}]${conf} — Check the Leaks page.`)
@@ -222,7 +224,7 @@ export default function Scanners() {
                 </div>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {['reddit','discord','twitter','telegram'].includes(sc.platform) && (
+                {['reddit','discord','twitter','telegram','pastebin'].includes(sc.platform) && (
                   <button
                     onClick={() => injectDemo(sc)}
                     disabled={injectId === sc.id}

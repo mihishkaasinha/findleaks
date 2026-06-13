@@ -180,48 +180,59 @@ async def patch_scanner(
 import random as _random
 
 _NOISE_TEMPLATES = [
-    ("WhatsApp leak",       "seen this in a study group just now: {q} — anyone recognise this paper??"),
-    ("Telegram forward",    "forwarded from premium channel 🔥📚 {q} 🔥 DM for full set"),
-    ("Discord post",        "bro look what someone dropped in the server lmaooo {q} idk which paper tho"),
-    ("Reddit thread",       "Guys my friend shared this snippet: {q}\nDoes anyone know the source exam?"),
-    ("Paste dump header",   "===EXAM LEAK=== date:{ts}\n{q}\n===END==="),
+    ("WhatsApp leak",
+     "bhai dekh kya mila study group mein aaj — {q} — koi bata sakta hai kis paper ka hai??"),
+    ("Telegram forward",
+     "📢 forwarded from @leaks_jee_2025\n\ncheck this out guys someone posted:\n\n{q}\n\nmore questions available DM me"),
+    ("Discord post",
+     "yo dropped this in #resources — found on some random site:\n\n{q}\n\nanyone seen this before lol"),
+    ("Reddit thread",
+     "Posted in r/JEEPrep2025:\n\"Hey found this floating around, is it real?\"\n\n{q}\n\nEdit: apparently from last year"),
+    ("Paste dump",
+     "PARTIAL DUMP - extracted text (auto OCR, errors possible):\n...\n{q}\n...\n[continued on next page]"),
 ]
+
+_FILLER = (
+    "the quick brown fox jumps over the lazy dog near the river bank "
+    "students gathered early in the morning before the examination hall opened "
+    "please read all instructions carefully before attempting the questions "
+    "time allowed three hours maximum marks three hundred "
+)
 
 
 def _demo_variant(question_text: str) -> tuple[str, str]:
-    """Return (variant_label, transformed_content) for demo injection.
+    """Return (variant_label, transformed_content) targeting REVIEW confidence (0.52–0.68).
 
-    Variants are cycled deterministically within a second so consecutive
-    rapid clicks still vary, while repeated calls spread across confidence tiers.
+    Verbatim text is intentionally excluded — all variants add noise/truncation
+    so the FAISS cosine score lands below the HIGH threshold (0.68).
     """
-    import datetime, textwrap
+    import datetime
     words = question_text.split()
     n = len(words)
 
-    bucket = _random.randint(0, 4)
+    bucket = _random.randint(0, 3)
 
-    if bucket == 0 or n < 8:
-        return "verbatim", question_text
+    if bucket == 0:
+        # First 40% of words only — enough signal for REVIEW, not enough for HIGH
+        chunk = " ".join(words[:max(5, int(n * 0.40))])
+        return "truncated_40pct", chunk
 
     if bucket == 1:
-        chunk = " ".join(words[:max(6, int(n * 0.6))])
-        return "truncated_60pct", chunk
-
-    if bucket == 2:
+        # Forum post wraps question in heavy social-media noise
         tmpl_label, tmpl = _NOISE_TEMPLATES[_random.randint(0, len(_NOISE_TEMPLATES) - 1)]
         ts = datetime.datetime.utcnow().strftime("%Y-%m-%d")
-        noisy = tmpl.format(q=question_text[:300], ts=ts)
+        noisy = tmpl.format(q=question_text[:250], ts=ts)
         return f"forum_noise({tmpl_label})", noisy
 
-    if bucket == 3:
-        sparse = " ".join(words[i] for i in range(0, n, 2))
-        return "every_other_word", sparse
+    if bucket == 2:
+        # Every 3rd word — sparse signal, diluted embedding
+        sparse = " ".join(words[i] for i in range(0, n, 3))
+        return "every_3rd_word", sparse
 
-    # bucket == 4 — first sentence / first 10 words
-    first_sent = question_text.split(".")[0].split("?")[0]
-    if len(first_sent.split()) < 5:
-        first_sent = " ".join(words[:10])
-    return "first_sentence", first_sent
+    # bucket == 3 — question sandwiched in filler text (embedding centroid shifts)
+    half = question_text[:200]
+    sandwiched = f"{_FILLER[:120]} {half} {_FILLER[120:]}"
+    return "sandwiched_in_filler", sandwiched
 
 
 @router.post("/{scanner_id}/inject-paste")
