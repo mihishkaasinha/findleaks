@@ -61,11 +61,10 @@ def preprocess_image(image_bytes: bytes) -> "np.ndarray":
         gray = cv2.resize(gray, None, fx=scale, fy=scale,
                           interpolation=cv2.INTER_CUBIC)
 
-    # Mild blur to reduce grain, then adaptive threshold for uneven lighting
     blurred = cv2.GaussianBlur(gray, (3, 3), 0)
     thresh = cv2.adaptiveThreshold(
         blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY, 31, 10
+        cv2.THRESH_BINARY, 11, 2
     )
     return thresh
 
