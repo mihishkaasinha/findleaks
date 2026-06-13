@@ -39,11 +39,17 @@ function ConfidenceMeter({ value, label }) {
 
 function highlightCommon(text, otherText) {
   if (!text || !otherText) return text
-  const stop = new Set('a an the is are was were be been have has had do does did will would could should may might of in on at to for with by from and or but not no this that these those i we you he she it they'.split(' '))
-  const other = new Set(otherText.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 2 && !stop.has(w)))
+  const stop = new Set((
+    'a an the is are was were be been have has had do does did will would could should may might ' +
+    'of in on at to for with by from and or but not no this that these those i we you he she it they ' +
+    'which one two three four five six seven eight nine ten following each all any only also just ' +
+    'find given value correct option answer question paper section part marks time total maximum ' +
+    'zero none both either neither every other such more less most least always never often'
+  ).split(' '))
+  const other = new Set(otherText.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(w => w.length > 3 && !stop.has(w)))
   return text.split(/(\s+)/).map((tok, i) => {
     const clean = tok.toLowerCase().replace(/[^a-z0-9]/g, '')
-    if (clean.length > 2 && other.has(clean))
+    if (clean.length > 3 && other.has(clean))
       return <mark key={i} className="bg-yellow-400/30 text-yellow-200 rounded px-0.5">{tok}</mark>
     return tok
   })
