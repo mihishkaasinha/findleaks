@@ -205,6 +205,22 @@ def _jaccard(text_a: str, text_b: str) -> float:
     return len(a & b) / len(a | b)
 
 
+def _char_ngram_jaccard(text_a: str, text_b: str, n: int = 3) -> float:
+    """
+    Character n-gram Jaccard similarity.
+    Robust to OCR noise: 'chatecd' and 'charged' share 'cha','ate','ted','ged'
+    even though the words differ. Spaces stripped before n-gram extraction.
+    """
+    a = text_a.replace(" ", "")
+    b = text_b.replace(" ", "")
+    if len(a) < n or len(b) < n:
+        return 0.0
+    a_grams = set(a[i:i + n] for i in range(len(a) - n + 1))
+    b_grams = set(b[i:i + n] for i in range(len(b) - n + 1))
+    union = len(a_grams | b_grams)
+    return len(a_grams & b_grams) / union if union else 0.0
+
+
 def confidence_label(confidence: float) -> str:
     settings = get_settings()
     if confidence >= settings.ALERT_THRESHOLD_HIGH:
@@ -234,29 +250,39 @@ def detect(
 
     matches = search_faiss(ocr_text, exam_slug, top_k=top_k)
 
-    # Re-rank by combined score: FAISS cosine + Jaccard word-overlap.
-    # This corrects cases where an unrelated question ties with the real match.
-    # Original FAISS scores are still used for confidence computation.
+    # Re-rank by combined score: FAISS cosine + word Jaccard + char-trigram Jaccard.
+    # char-trigram is robust to OCR noise: 'chatecd'/'charged' still share 'cha','ted'.
+    # Combined score used for BOTH ranking and display; raw FAISS used for confidence.
     ocr_clean = clean_text(ocr_text)
     if question_texts:
         scored = []
         for idx, faiss_score in matches:
             q_text = question_texts[idx] if idx < len(question_texts) else ""
             q_clean = clean_text(q_text)
-            jaccard = _jaccard(ocr_clean, q_clean)
-            combined = faiss_score * (1.0 + 0.35 * jaccard)
-            scored.append((idx, faiss_score, combined))
+            wj = _jaccard(ocr_clean, q_clean)
+            cj = _char_ngram_jaccard(ocr_clean, q_clean, n=3)
+            combined = faiss_score * (1.0 + 0.40 * wj + 0.30 * cj)
+            scored.append((idx, faiss_score, min(combined, 1.0)))
         scored.sort(key=lambda x: x[2], reverse=True)
-        matches = [(idx, faiss_score) for idx, faiss_score, _ in scored]
+        # raw_scores still use FAISS scores (for calibrated confidence)
+        raw_scores = [s[1] for s in scored]
+        confidence = compute_confidence(raw_scores)
+        label = confidence_label(confidence)
 
-    raw_scores = [score for _, score in matches]
-    confidence = compute_confidence(raw_scores)
-    label = confidence_label(confidence)
-
-    matched_questions = []
-    for idx, score in matches:
-        text = question_texts[idx] if question_texts and idx < len(question_texts) else ""
-        matched_questions.append(MatchedQuestion(question_id=idx, text=text, score=score))
+        matched_questions = []
+        for idx, faiss_score, combined in scored:
+            q_text = question_texts[idx] if idx < len(question_texts) else ""
+            matched_questions.append(MatchedQuestion(
+                question_id=idx, text=q_text, score=round(combined, 4)
+            ))
+    else:
+        raw_scores = [score for _, score in matches]
+        confidence = compute_confidence(raw_scores)
+        label = confidence_label(confidence)
+        matched_questions = []
+        for idx, score in matches:
+            q_text = question_texts[idx] if question_texts and idx < len(question_texts) else ""
+            matched_questions.append(MatchedQuestion(question_id=idx, text=q_text, score=score))
 
     top_score = raw_scores[0] if raw_scores else 0.0
 
