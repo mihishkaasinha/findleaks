@@ -71,6 +71,7 @@ export const api = {
     return upload(`/exams/${examId}/scan`, fd)
   },
 
+  getLeak: (id) => request('GET', `/leaks/${id}`),
   getLeaks: (params = {}) => {
     const qs = new URLSearchParams(params).toString()
     return request('GET', `/leaks${qs ? '?' + qs : ''}`)

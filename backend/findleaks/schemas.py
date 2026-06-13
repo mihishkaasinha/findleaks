@@ -185,6 +185,31 @@ class LeakListResponse(BaseModel):
     items: list[LeakItem]
 
 
+class LeakExcerptDetail(BaseModel):
+    question_id: int
+    text: Optional[str] = None
+    score: float
+
+
+class LeakDetail(BaseModel):
+    id: int
+    exam_id: int
+    exam_name: Optional[str] = None
+    platform: str
+    platform_post_id: Optional[str] = None
+    ocr_text: Optional[str] = None
+    confidence: float
+    confidence_label: str
+    matched_question_count: int = 0
+    matched_excerpts: list[LeakExcerptDetail] = []
+    timestamp: datetime
+    status: str
+    alert_sent: bool
+    raw_payload: Optional[dict] = None
+
+    model_config = {"from_attributes": True}
+
+
 class LeakPatch(BaseModel):
     status: str = Field(..., pattern="^(acknowledged|false_positive)$")
     notes: Optional[str] = Field(None, max_length=1000)

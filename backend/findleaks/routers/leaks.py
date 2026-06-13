@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from findleaks.auth import get_current_user
 from findleaks.database import get_db
-from findleaks.models import Exam, Leak
-from findleaks.schemas import LeakItem, LeakListResponse, LeakPatch, LeakPatchResponse
+from findleaks.models import Exam, Leak, Question
+from findleaks.schemas import LeakDetail, LeakExcerptDetail, LeakItem, LeakListResponse, LeakPatch, LeakPatchResponse
 
 router = APIRouter(prefix="/leaks", tags=["leaks"])
 
@@ -67,6 +67,57 @@ async def list_leaks(
         page_size=page_size,
         total_pages=max(1, -(-total // page_size)),
         items=items,
+    )
+
+
+@router.get("/{leak_id}", response_model=LeakDetail)
+async def get_leak(
+    leak_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> LeakDetail:
+    row = (await db.execute(select(Leak).where(Leak.id == leak_id))).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail={"error": "leak_not_found"})
+
+    exam_name = None
+    if row.exam_id:
+        exam_name = (await db.execute(select(Exam.name).where(Exam.id == row.exam_id))).scalar_one_or_none()
+
+    raw_excerpts: list[dict] = row.matched_excerpts or []
+    q_ids = [e.get("question_id") for e in raw_excerpts if e.get("question_id") is not None]
+    q_texts: dict[int, str] = {}
+    if q_ids:
+        q_rows = (await db.execute(
+            select(Question.id, Question.question_text).where(Question.id.in_(q_ids))
+        )).all()
+        q_texts = {r.id: r.question_text for r in q_rows}
+
+    excerpts = [
+        LeakExcerptDetail(
+            question_id=e.get("question_id", 0),
+            text=q_texts.get(e.get("question_id"), None),
+            score=float(e.get("score", 0.0)),
+        )
+        for e in raw_excerpts
+    ]
+    excerpts.sort(key=lambda x: x.score, reverse=True)
+
+    return LeakDetail(
+        id=row.id,
+        exam_id=row.exam_id,
+        exam_name=exam_name,
+        platform=row.platform,
+        platform_post_id=row.platform_post_id,
+        ocr_text=row.ocr_text,
+        confidence=row.confidence,
+        confidence_label=row.confidence_label,
+        matched_question_count=len(row.matched_question_ids or []),
+        matched_excerpts=excerpts,
+        timestamp=row.timestamp,
+        status=row.status,
+        alert_sent=row.alert_sent,
+        raw_payload=row.raw_payload,
     )
 
 
