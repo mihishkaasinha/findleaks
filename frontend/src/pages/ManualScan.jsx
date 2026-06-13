@@ -87,34 +87,61 @@ export default function ManualScan() {
 
   const loadDemoImage = async () => {
     try {
-      // Create a demo image with text that matches indexed questions
       const canvas = document.createElement('canvas')
-      canvas.width = 400
-      canvas.height = 300
+      canvas.width = 700
+      canvas.height = 400
       const ctx = canvas.getContext('2d')
-      
-      // Dark background
-      ctx.fillStyle = '#1f2937'
-      ctx.fillRect(0, 0, 400, 300)
-      
-      // White text
+
+      // White background — OCR works best on light background
       ctx.fillStyle = '#ffffff'
-      ctx.font = '20px Arial'
-      ctx.fillText('DEMO LEAK IMAGE', 100, 50)
-      
-      ctx.font = '16px Arial'
-      ctx.fillText('Question: A particle moves in a', 30, 100)
-      ctx.fillText('straight line with velocity', 30, 125)
-      ctx.fillText('v = 3t² + 2t + 1 m/s.', 30, 150)
-      ctx.fillText('Find displacement after 2s.', 30, 175)
-      
-      ctx.font = '14px gray'
-      ctx.fillText('Options: A) 10m  B) 12m  C) 14m  D) 16m', 30, 210)
-      
+      ctx.fillRect(0, 0, 700, 400)
+
+      // Border
+      ctx.strokeStyle = '#cccccc'
+      ctx.lineWidth = 2
+      ctx.strokeRect(20, 20, 660, 360)
+
+      // Header
+      ctx.fillStyle = '#111111'
+      ctx.font = 'bold 18px Georgia'
+      ctx.fillText('JEE Main 2025 — Physics', 30, 55)
+
+      ctx.fillStyle = '#444444'
+      ctx.font = '13px Georgia'
+      ctx.fillText('Section A | Time: 3 Hours | Maximum Marks: 300', 30, 78)
+
+      // Divider
+      ctx.strokeStyle = '#aaaaaa'
+      ctx.beginPath()
+      ctx.moveTo(30, 90)
+      ctx.lineTo(670, 90)
+      ctx.stroke()
+
+      // Question lines — plain English, no special symbols for clean OCR
+      ctx.fillStyle = '#111111'
+      ctx.font = '17px Georgia'
+      const lines = [
+        'Q1. The velocity of a particle moving on a straight line',
+        '    varies with time as v = at + b where a and b are',
+        '    constants. Find the displacement of the particle',
+        '    after time t = 2 seconds.',
+        '',
+        '    (A)  2a + b          (B)  2a + 2b',
+        '    (C)  a + 2b          (D)  a + b',
+      ]
+      lines.forEach((line, i) => {
+        ctx.fillText(line, 30, 125 + i * 30)
+      })
+
+      // Watermark-like footer
+      ctx.fillStyle = '#cccccc'
+      ctx.font = '11px Arial'
+      ctx.fillText('Strictly Confidential — For Examiner Use Only', 30, 368)
+
       canvas.toBlob(blob => {
         const file = new File([blob], 'demo-leak.jpg', { type: 'image/jpeg' })
         handleFile(file)
-      }, 'image/jpeg')
+      }, 'image/jpeg', 0.95)
     } catch (err) {
       console.error('Failed to create demo image:', err)
       setError('Demo mode failed')
