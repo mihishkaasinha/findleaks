@@ -98,33 +98,39 @@ export default function Scanners() {
 
   useEffect(() => { load() }, [load])
 
+  const [demoLoading, setDemoLoading] = useState(false)
+  const [demoMsg, setDemoMsg] = useState('')
+
   const createDemoPaste = async () => {
-    const pasteText = `JEE Main 2025 - Physics Question
-
-A particle moves in a straight line with velocity v = 3t² + 2t + 1 m/s.
-Find its displacement after 2 seconds.
-
-Options:
-A) 10 m
-B) 12 m  
-C) 14 m
-D) 16 m
-
-#JEE #Physics #ExamLeaks`
-
-    // Open Pastebin in new tab with pre-filled content
-    const form = document.createElement('form')
-    form.method = 'POST'
-    form.action = 'https://pastebin.com/api/api_post.php'
-    form.target = '_blank'
-    
-    // For demo, we'll just open Pastebin with instructions
-    window.open('https://pastebin.com', '_blank')
-    
-    // Copy to clipboard for easy pasting
-    navigator.clipboard.writeText(pasteText).then(() => {
-      alert('Demo paste text copied to clipboard!\n\n1. Pastebin will open in new tab\n2. Paste the text (Ctrl+V)\n3. Title: "JEE Physics Question"\n4. Click "Create New Paste"\n5. Wait 30 seconds for scanner to detect it')
-    })
+    const pbScanner = scanners.find(s => s.platform === 'pastebin')
+    if (!pbScanner) {
+      setDemoMsg('No Pastebin scanner found — add one first')
+      setTimeout(() => setDemoMsg(''), 4000)
+      return
+    }
+    setDemoLoading(true)
+    setDemoMsg('')
+    try {
+      const token = localStorage.getItem('fl_token')
+      const resp = await fetch(`/api/scanners/${pbScanner.id}/inject-paste`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({}),
+      })
+      if (!resp.ok) throw new Error(await resp.text())
+      const res = await resp.json()
+      if (res.leak_detected) {
+        setDemoMsg('✓ Leak injected and detected! Check the Leaks page.')
+      } else {
+        setDemoMsg('Injected — no match found (check question bank has questions)')
+      }
+      load()
+    } catch (err) {
+      setDemoMsg('Error: ' + (err.message || 'inject failed'))
+    } finally {
+      setDemoLoading(false)
+      setTimeout(() => setDemoMsg(''), 5000)
+    }
   }
 
   const toggle = async (scanner) => {
@@ -154,9 +160,9 @@ D) 16 m
           <button onClick={load} className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition-colors">
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
-          <button onClick={createDemoPaste}
-            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-600/50 text-purple-400 transition-colors">
-            <Zap className="w-4 h-4" /> Demo Paste
+          <button onClick={createDemoPaste} disabled={demoLoading}
+            className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-600/50 text-purple-400 disabled:opacity-50 transition-colors">
+            {demoLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />} Demo Paste
           </button>
           <button onClick={() => setShowAdd(true)}
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors">
@@ -164,6 +170,12 @@ D) 16 m
           </button>
         </div>
       </div>
+
+      {demoMsg && (
+        <div className={`text-sm px-4 py-2 rounded-lg border ${demoMsg.startsWith('✓') ? 'bg-green-900/30 border-green-700 text-green-400' : 'bg-yellow-900/30 border-yellow-700 text-yellow-400'}`}>
+          {demoMsg}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-16">

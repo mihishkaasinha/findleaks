@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -175,3 +175,58 @@ async def patch_scanner(
         leaks_detected=row.leaks_detected,
         error_count=row.error_count,
     )
+
+
+@router.post("/{scanner_id}/inject-paste")
+async def inject_paste(
+    scanner_id: int,
+    content: str = Body(None, embed=True),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """
+    Demo / test endpoint: run a text snippet directly through the Pastebin
+    scanner pipeline without polling pastebin.com.  If `content` is omitted,
+    the first question from the exam's question bank is used so a match is
+    guaranteed.
+    """
+    from findleaks.models import Question
+    from findleaks.scanners.pastebin import PastebinScanner
+    import datetime
+
+    row = (await db.execute(
+        select(ScannerStatus).where(ScannerStatus.id == scanner_id)
+    )).scalar_one_or_none()
+    if not row:
+        raise HTTPException(status_code=404, detail={"error": "scanner_not_found"})
+
+    exam = (await db.execute(
+        select(Exam).where(Exam.id == row.exam_id)
+    )).scalar_one_or_none()
+    if not exam:
+        raise HTTPException(status_code=404, detail={"error": "exam_not_found"})
+
+    if not content:
+        q_row = (await db.execute(
+            select(Question.question_text)
+            .where(Question.exam_id == row.exam_id)
+            .limit(1)
+        )).scalar_one_or_none()
+        if not q_row:
+            raise HTTPException(status_code=422, detail={"error": "no_questions_in_bank"})
+        content = q_row
+
+    scanner = PastebinScanner(
+        exam_id=row.exam_id, exam_slug=exam.slug, keywords=[]
+    )
+    post_id = f"demo:{datetime.datetime.utcnow().timestamp()}"
+    result = await scanner.scan_post(content, post_id)
+
+    logger.info("inject_paste_complete", scanner_id=scanner_id, matched=result is not None)
+    return {
+        "injected": True,
+        "post_id": post_id,
+        "content_preview": content[:120],
+        "leak_detected": result is not None,
+        "result": result,
+    }
