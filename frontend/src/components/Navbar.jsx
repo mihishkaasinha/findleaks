@@ -2,7 +2,7 @@ import React from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import {
-  LayoutDashboard, BookOpen, ScanLine, Bell, Radio, Activity, LogOut, Settings, ShieldAlert
+  LayoutDashboard, BookOpen, ScanLine, Bell, Radio, Activity, LogOut, ShieldAlert
 } from 'lucide-react'
 
 const NAV = [
@@ -12,7 +12,6 @@ const NAV = [
   { to: '/alerts', label: 'Alerts', icon: Bell },
   { to: '/scanners', label: 'Scanners', icon: Radio },
   { to: '/health', label: 'System', icon: Activity },
-  { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
 export default function Navbar() {

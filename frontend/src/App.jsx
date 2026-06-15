@@ -12,7 +12,6 @@ import ManualScan from './pages/ManualScan'
 import Alerts from './pages/Alerts'
 import Scanners from './pages/Scanners'
 import SystemHealth from './pages/SystemHealth'
-import Settings from './pages/Settings'
 import NotFound from './pages/NotFound'
 
 function AppLayout({ children }) {
@@ -69,12 +68,6 @@ export default function App() {
               <AppLayout><Questions /></AppLayout>
             </PrivateRoute>
           } />
-          <Route path="/settings" element={
-            <PrivateRoute>
-              <AppLayout><Settings /></AppLayout>
-            </PrivateRoute>
-          } />
-
           <Route path="*" element={<NotFound />} />
         </Routes>
       </AuthProvider>
